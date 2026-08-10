@@ -1,0 +1,11 @@
+VFS:
+  /dev_bdvd/: C:/Users/Elysion/Desktop/MACROSS/BLJS10184-[日版-超时空要塞30 连接银河的歌声-射击类]/
+Core:
+  PPU Decoder: Interpreter (static)
+  Sleep Timers Accuracy: All Timers
+  Thread Scheduler Mode: RPCS3 Scheduler
+Miscellaneous:
+  Start games in fullscreen mode: true
+Video:
+  Write Color Buffers: true
+  Stretch To Display Area: true

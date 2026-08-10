@@ -1,0 +1,36 @@
+Version: 1.2
+
+# Macross 30 (BLJS10184) 32:9 ultrawide (3D only, verified)
+# 思路: 投影矩阵水平项 = m11 / aspect, aspect = (float)w / (float)h (fcfid 整数转换)
+# 把各处宽度转换 frsp fX, f13 改成 fadds fX, f13, f13 (宽度×2 → aspect 16:9 → 32:9)
+# 另: 标量构建器用的静态宽高比表 @0xad5328 由 16/9 改为 32/9
+# 配合 Video: Stretch To Display Area + 全屏使用; HUD/影片为 16:9 预渲染保持拉伸
+PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
+  "32:9 Ultrawide (7680x2160)":
+    Games:
+      "Macross 30":
+        "BLJS10184": [ All ]
+    Author: Kimi
+    Notes: "32:9 aspect for Macross 30. Use with Stretch To Display Area + fullscreen. 3D widened; HUD/movies stay 16:9."
+    Patch Version: 1.0
+    Patch:
+      # A site (caller5 调用者 A): frsp f2, f13 -> fadds f2, f13, f13
+      - [ be32, 0x005655c8, 0xec4d682a ]
+      # B site (caller5 调用者 B)
+      - [ be32, 0x00566a74, 0xec4d682a ]
+      # C site (caller5 调用者 C)
+      - [ be32, 0x0057fdf4, 0xec4d682a ]
+      # D site (caller5 调用者 D)
+      - [ be32, 0x005801d4, 0xec4d682a ]
+      # caller4 内联投影构建: frsp f30, f13 -> fadds f30, f13, f13
+      - [ be32, 0x0056677c, 0xefcd682a ]
+      # 静态宽高比表 16/9 -> 32/9 (chain B 标量构建器唯一数据源)
+      - [ be32, 0x00ad5328, 0x40638e39 ]
+      # UI v3: 对话框/UI 缩放源 @0xabde80 (0xb0b90 处构建 {1/1280,1/720,0,0} 上传) -> 1/2560
+      - [ be32, 0x00abde80, 0x39cccccd ]
+      - [ be32, 0x00b07a10, 0x39cccccd ]
+      - [ be32, 0x00b08110, 0x39cccccd ]
+      - [ be32, 0x008df288, 0x3a4ccccd ]
+      - [ be32, 0x008df4c0, 0x3a4ccccd ]
+      - [ be32, 0x008dfa18, 0x3a4ccccd ]
+      # 分类器强制 720p: 0x55a0dc lwz r0,0x18(r3) -> li r0,0x500 ; 0x55a154 lwz r0,0x1c(r3) -> li r0,0x2d0
