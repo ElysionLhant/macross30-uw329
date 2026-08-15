@@ -41,6 +41,8 @@ Symptom: at 32:9 the 3D scene is squashed. The obvious target is the projection 
 
 Lesson: **patching inputs is safer than patching formulas**. The matrix is rebuilt in memory every frame; chasing the matrix itself never ends. Chasing its operands works once and for all.
 
+> Note for readers of the chronicle: the "rainbow stripes" in HANDOFF.md were an artifact of the **retired** `li 1280→2560` route (widened surface VPs outgrew tile pitch). The shipped ingredient route never touches surface widths — there is no rainbow. The tile1/2 tier-preset-table hunt only matters if someone revives that retired route.
+
 ### 2. HUD centering: find the writer functions, not constants
 
 Symptom: at 32:9 the entire HUD is squeezed into the left third of the screen.
@@ -139,7 +141,6 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 
 ## Open items (besides the seam)
 
-- tile1/2 (depth/fog render targets) 1280 source: tier preset table, still unlocated (rainbow-edge source)
 - Per-resource integrity check (CRC32 @0x653aa0) reverse engineering for dialog.ark / mechroom_develop.ark / quest_clear
 
 ## Credits

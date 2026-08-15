@@ -16,7 +16,7 @@
 ## 未竟事项（按价值排序，起始点都已写死）
 
 1. **冲刺残影分割线**——README「The Next Path」+ BAKER_FINDING 附录 D。模糊走 0x822 dummy-quad 路径（共享表 `@0x81eb1e04`，发射器 `0x9b1d8`），不经已补丁的 36 函数。正道 = build2 运行时按 quad 宽门控（`RPCS3_UW_HUD` 钩子链）；侦察 = tex==`0x027b0000` 的 0x822 绘制时记录写表 CPU PC。**别恢复那 7 个变体，别再摘 0x5exxxx 函数。**
-2. **彩虹边缘**——tile1/2（深度/雾 RT）的 1280 来源在 tier 预设表，未定位。
+2. ~~彩虹边缘~~ **已随路线退役**——彩虹是 li 1280→2560 组（B 路线）把表面 VP 拉得比 tile pitch 还宽的产物；现装的 fadds 原料法不动表面宽度，**没有彩虹**。tile1/2 tier 预设表只有谁想复活 li 路线时才需要找。
 3. **pack 完整性校验**——CRC32 @0x653aa0，dialog.ark 等三个资源改不了（弹 "Game data is corrupted"）。
 
 ## 文档地图（按阅读顺序）
