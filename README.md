@@ -1,165 +1,144 @@
 # Macross 30 (BLJS10184) — RPCS3 32:9 Ultrawide Patch & Toolkit
 
-English summary at the bottom / 英文摘要在文末。
+A 32:9 (7680×2160) ultrawide patch for **Macross 30: Ginga o Tsunagu Utagoe (BLJS10184)** on **RPCS3 v0.0.32-16803**, plus the full reverse-engineering toolkit used to build it.
 
-Macross 30（超时空要塞30 连接银河的歌声，BLJS10184）在 **RPCS3 v0.0.32-16803** 上的 32:9（7680×2160）超宽屏补丁，以及打出这套补丁所用的全套逆向工具链。
+**Current state (all verified on hardware)**:
 
-**当前效果（全部实机验证）**：
-
-- 3D 投影原生 32:9（主相机矩阵 m00 减半，0.974→0.487）
-- HUD / 菜单 / 文字全部原生居中到中央 16:9 区（CPU 烘焙补丁，不是拉伸）
-- 影片为 16:9 预渲染，保持拉伸（无解，片源就是 16:9 的）
-- 已知残留：冲刺（加速）时运动模糊边缘有一条分割线，见下文「下一段路」
+- 3D projection renders native 32:9 (main camera matrix m00 halved, 0.974→0.487)
+- HUD, menus and text are natively centered to the middle 16:9 region (CPU baker patches, not stretching)
+- Movies stay stretched 16:9 (pre-rendered 16:9 sources — nothing can be done)
+- Known leftover: a vertical seam line on the boost motion blur — see "The Next Path" below
 
 ---
 
-## 安装
+## Installation
 
-1. 必须用 RPCS3 **v0.0.32-16803**（新版放不了本作的影片，见 RPCS3 issue #17485）
-2. `patches/patch.yml` 放进 rpcs3 的 `patches/`；`patches/config_BLJS10184.yml` 放进 `config/custom_configs/`（里面 VFS 路径改成你自己的游戏目录）
-3. 补丁管理器启用；GPU 设置勾 **Stretch To Display Area**；**必须全屏玩**（窗口模式横向压缩是预期现象）
-4. PPU 补丁在 LLVM recompiler 下同样生效；不要用解释器（0.08 fps，纯粹调试用途）
+1. You must use RPCS3 **v0.0.32-16803** (newer builds can't play this game's videos — see RPCS3 issue #17485)
+2. Copy `patches/patch.yml` into your rpcs3 `patches/` folder, and `patches/config_BLJS10184.yml` into `config/custom_configs/` (edit the VFS path inside to point at your game folder)
+3. Enable the patch in the patch manager, check **Stretch To Display Area**, and play in **fullscreen** (horizontal squish in windowed mode is expected)
+4. PPU patches work under the LLVM recompiler. Do not use the interpreter (0.08 fps, debug only)
 
 ---
 
-## 核心考据：这套补丁是怎么想出来的
+## How the patch works (the hard-won parts)
 
-给后来人：以下每一节都是卡了很久才打通的关节，按这个顺序读可以少踩我们踩过的坑。完整编年日志在 `docs/HANDOFF.md`，写出函数全考据在 `docs/BAKER_FINDING.md`（附录 A-D），冷启动交接在 `docs/COLDSTART.md`。
+Written for whoever comes next. Each section is a wall we spent days on; reading them in order will save you from our dead ends. Full chronicle in `docs/HANDOFF.md` (Chinese), complete writer-function analysis in `docs/BAKER_FINDING.md` (appendices A–D), cold-start handoff in `docs/COLDSTART.md`.
 
-### 1. 3D 宽屏：别碰投影矩阵，碰它的原料
+### 1. 3D widening: don't touch the projection matrix — touch its ingredients
 
-> 本节的思路致谢 **[@wagrenier](https://github.com/wagrenier)**——"改宽度原料而非投影公式"的解法来自他的星海（Star Ocean）系列补丁，本作 3D 部分能解得这么顺，是因为在他的作业里见过同一个坑。
+> Credit: this approach comes from **[@wagrenier](https://github.com/wagrenier)**'s Star Ocean patch work. The 3D part of this project went smoothly because we had seen the same trap in his solutions.
 
-症状是 32:9 下 3D 被压扁。常规定位是找投影矩阵的 m00/tan(fov)，但本作的投影是**每帧现算**的：
+Symptom: at 32:9 the 3D scene is squashed. The obvious target is the projection matrix (m00 / tan(fov)), but in this game the projection is **recomputed every frame**:
 
-- `aspect = (float)w / (float)h`，其中 w/h 来自**整数到浮点的 fcfid 转换**，再 `frsp` 收成单精度
-- 把各处宽度转换的 `frsp fX, f13` 改成 `fadds fX, f13, f13`（宽度×2），aspect 就从 16:9 变成 32:9，下游所有投影构建自动正确
-- 另有一路标量构建器走**静态宽高比常量表** `@0xad5328`，把里面的 16/9 (0x3FE38E39) 改成 32/9 (0x40638E39)
+- `aspect = (float)w / (float)h`, where w/h come from integer→float `fcfid` conversions followed by `frsp`
+- Change the width conversions `frsp fX, f13` to `fadds fX, f13, f13` (width ×2) and aspect becomes 32:9 — every downstream projection builder becomes correct automatically
+- One scalar builder path uses a **static aspect constant table** `@0xad5328`; patch 16/9 (`0x3FE38E39`) to 32/9 (`0x40638E39`)
 
-教训：**改输入比改公式安全**。投影矩阵在内存里每次重新构建，盯着矩阵本身永远追不到源头；盯它的操作数一次到位。
+Lesson: **patching inputs is safer than patching formulas**. The matrix is rebuilt in memory every frame; chasing the matrix itself never ends. Chasing its operands works once and for all.
 
-### 2. HUD 居中：找"写出函数"，别找常量
+### 2. HUD centering: find the writer functions, not constants
 
-症状：32:9 下全部 HUD 挤在屏幕左 1/3。
+Symptom: at 32:9 the entire HUD is squeezed into the left third of the screen.
 
-HUD 顶点是 **CPU 逐角点烘焙**的 f32 四边形，写出代码是一个**函数族**（通用 2D 类的 vtable，共 36 个写出函数 + 2 个文字渲染器）。每个函数的模式一模一样：
+HUD vertices are **CPU-baked per corner** as f32 quads, written by a **function family** (a generic 2D class vtable: 36 writer functions + 2 text renderers). Every function follows the same pattern:
 
 ```
-每绘制读 0x5bba04 的运行时 W/H（所以没有任何静态常量可搜！）
-A = W * K,  K = 0.5（常量 @0xad7058, TOC1+0x599c）
-ndc_x = (px - A) / A      // px ∈ [0,1280] 设计坐标
+reads runtime W/H from 0x5bba04 on every draw
+  (so there is NO static constant to search for!)
+A = W * K,  K = 0.5 (constant @0xad7058, TOC1+0x599c)
+ndc_x = (px - A) / A      // px ∈ [0,1280] design coordinates
 ndc_y = -(py - B) / B
 ```
 
-32:9 下运行时 W=3840，A=1920，px∈[0,1280] 被映射到 [-1, -1/3]——这就是"左 1/3"的成因。**搜 51.2 / 32767 / 1280 之类的常量全是死路**，因为宽度是运行时读的，必须找写出函数本身。
+At 32:9 the runtime W is 3840, so A=1920 and px∈[0,1280] maps to [-1, -1/3] — that's the left-third squeeze. **Searching for constants like 51.2 / 32767 / 1280 is a dead end**: the width is read at runtime, so you must find the writer functions themselves.
 
-居中的改法（每个 x 角点只动 2 条指令，y 不碰）：
+The centering fix (2 instructions per x-corner; y untouched):
 
 ```ppc
-# 原始:  fsubs f13, f13, fA   ; px - A
-#        fdivs f13, f13, fA   ; / A
-# 改后:  fdivs f13, f13, fA   ; px / A
-#        fmsubs f13, f13, fS, fS ; (px/A)*0.5 - 0.5  =  px/(2A) - 0.5
+# original:  fsubs f13, f13, fA    ; px - A
+#            fdivs f13, f13, fA    ; / A
+# patched:   fdivs f13, f13, fA    ; px / A
+#            fmsubs f13, f13, fS, fS  ; (px/A)*0.5 - 0.5 = px/(2A) - 0.5
 ```
 
-合成结果 `px/(2A) - 0.5`：设计坐标 [0,1280] 恰好映射到 NDC [-0.5, 0.5]，即中央 16:9 区，且**宽高比不被拉伸**（x 缩放系数与 y 一致）。fS=0.5 的种子用函数里现成的 `nop` 槽放一条 `lfs fS, 0x599c(r2)`。
+Result `px/(2A) - 0.5`: design coordinates [0,1280] map exactly onto NDC [-0.5, 0.5], the middle 16:9 region, **without aspect distortion** (x scale factor matches y). The fS=0.5 seed goes into an existing `nop` slot as `lfs fS, 0x599c(r2)`.
 
-PPC A-form 编码要点（踩过坑）：**frC 在 bits 10-6，frB 在 bits 15-11**；fdivs XO=18、fmsubs XO=28、fmuls XO=25（opcode 都是 59）；`fmsubs(a,b,c) = a*b - c`。frsp/frsqrte 等是 opcode **63** 不是 59。
+PPC A-form encoding gotchas (learned the hard way): **frC is at bits 10-6, frB at bits 15-11**; fdivs XO=18, fmsubs XO=28, fmuls XO=25 (all opcode 59); `fmsubs(a,b,c) = a*b - c`. frsp & co. are opcode **63**, not 59.
 
-### 3. 全屏特效必须豁免：UI 和特效共用同一个 vtable
+### 3. Fullscreen effects must be exempted: UI and effects share the same vtable
 
-36 个写出函数里有一小撮**不只画 UI，还画全屏特效 quad**（冲刺拖影的黑带来源）。这些 quad 的设计坐标本来就横跨全屏，居中补丁把它们压进中央带 = 一条黑色拖影。
+A handful of the 36 writers **draw not only UI but also fullscreen effect quads** (the source of the black drag band during boost). Those quads' design coordinates already span the full screen; the centering patch squeezes them into the middle band = a black shadow trail.
 
-处理：**7 个 quad+UV 变体（0x5e48ac/0x5e4bc8/0x5e4ee0/0x5e51f8/0x5e5510/0x5e5828/0x5e5b7c）整体不打补丁**，保持原始 `(px-A)/A`——对全屏 quad 来说原式在任何宽高比下都正确。
+Handling: **leave the 7 quad+UV variants (0x5e48ac / 0x5e4bc8 / 0x5e4ee0 / 0x5e51f8 / 0x5e5510 / 0x5e5828 / 0x5e5b7c) completely unpatched**, keeping the original `(px-A)/A` — which for fullscreen quads is already correct at any aspect ratio.
 
-教训：**静态补丁的最小粒度是整个函数**。一个函数混画 UI 和特效时，内联按宽度豁免做不到（每角点只剩 2 条指令位，fsel 需要 3 条，JIT 下也没有 code cave），只能整函数取舍，或者上模拟器侧运行时门控（见「下一段路」）。
+Lesson: **the minimum granularity of a static patch is a whole function**. When one function draws both UI and effects, inline width-gating is impossible (only 2 instruction slots per corner, `fsel` needs 3, and there is no code cave under the JIT), so you can only accept/reject whole functions — or move to emulator-side runtime gating (see below).
 
-### 4. 文字渲染器：寄存器生命周期比公式难
+### 4. Text renderer: register lifetimes are harder than formulas
 
-文字不走上面 36 个函数，走 `0x1a1244`（单精灵）和 `0x1a1a54`（批量精灵 bdnz 环），用另一套 K 常量（@0xac18a4, TOC2-0x2fc）。公式改法相同，但批量环里有个暗坑：
+Text doesn't go through the 36 writers; it uses `0x1a1244` (single sprite) and `0x1a1a54` (batched sprite `bdnz` loop) with a different K constant (@0xac18a4, TOC2-0x2fc). Same formula fix, but the batch loop hides a trap:
 
-- 环内 `f12` 加载 K=0.5 之后，被一条 `frsp f12, f7`（UV 的 v 除数 texH 的 int→float 转换）**撞碎**——texW/texH 是环不变的，编译器却每轮重算
-- 解法：把 texH 挪窝——`frsp f12,f7` 改成 `frsp f13,f7`，两条 UV v 除法 `fdivs f10,f10,f12` / `fdivs f8,f8,f12` 改吃 f13。f13 本来就是每角点 `lfs` 重载的 scratch，时机上无冲突；f12 于是全程保 K
-- **敢用 f12 的前提是确认它跨 `bl` 存活**：整条调用链（0x8daf08 跳板 → 0x574190 → memcpy 系工具函数）反汇编确认**全程零 FP 写**才行。volatile 寄存器想当然是会死人的
+- After `f12` is loaded with K=0.5, an in-loop `frsp f12, f7` (int→float conversion of texH, the UV v-divisor) **clobbers it** — texW/texH are loop-invariant, yet the compiler recomputes them every iteration
+- Fix: relocate texH — change `frsp f12,f7` to `frsp f13,f7`, and retarget the two UV v-divisions `fdivs f10,f10,f12` / `fdivs f8,f8,f12` to f13. f13 is a per-corner `lfs`-reloaded scratch anyway, so there is no timing conflict; f12 then holds K for the whole loop
+- **Daring to use f12 across the `bl` requires proof**: we disassembled the entire call tree (0x8daf08 trampoline → 0x574190 → memcpy-style utilities) and confirmed **zero FP writes** end to end. Assuming a volatile register survives a call is how you get garbage
 
-教训：批量环的记录推进指针是 `r31`（`addi r31,r31,0x20`）。早前一版补丁偷 `clrldi` 槽位放种子、补偿错了寄存器，文字被压成一条竖线。**改环内代码前，先把每个寄存器的生命周期画完**。
+Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). An earlier patch version stole `clrldi` slots for seeds and compensated the wrong register — text collapsed into a vertical line. **Before patching loop code, map every register's lifetime first.**
 
-### 5. 工程环境（RPCS3 特制 build2）
+### 5. Build environment (custom RPCS3 "build2")
 
-- 补丁载体就是标准 `patch.yml`（be32 词），LLVM 下生效，不用改模拟器
-- PPU 补丁地址 = EBOOT 解密后的 vaddr（本仓 `tools/` 里有 dump/反汇编设施，capstone 记得开 `skipdata`，否则遇数据即停）
-- **一组 `li 1280→2560` 立即数补丁会随机"万花筒"**（布局走了多条路径），已弃用；v11 li 组同理，日常别开
-- 活体内存基址实测 `0x400000000`（pymem 读 base+vaddr 可验证补丁是否生效）
-
----
-
-## 下一段路（冲刺残影分割线）— 起始点写死在这里
-
-**症状**：加速/冲刺时 3D 残影上有一条竖直分割线。其余全部正常，游戏完全可玩。
-
-**已查明（附录 D，不用再查）**：
-
-- 运动模糊 = 3 个 pass × 7 tap，采样主显示纹理 `0x027b0000`；着色器 VP 本地地址低 24 位 `0xf3d181 / 0x7b01 / 0xabf81`（**运行时分配**，EBOOT 无字面值，静态搜不到）
-- 三个 pass 全部走 **0x822 dummy-quad 合成路径**：slot0 全零、slot12 是共享浮点表 **`@0x81eb1e04`**；发射器在 `0x9b1d8`（含 `0x9b420`/`0x9b7f8` 两处 ori 0x822 格式命令）
-- 这条路径**不经过**已打补丁的 36 个写出函数（那些产 0x1032/0x1432 真顶点，slot0 非零）。模糊链本身没被压缩，**没有更多函数可摘**——再摘只会把 UI 一起带走
-- 那条缝 = 全屏模糊区与其它内容的边界，**不是**还有一个模糊写出器被压着
-
-**两条可行路线**：
-
-1. **（正道）build2 模拟器侧运行时门控**：在已建的 `RPCS3_UW_HUD` 钩子链上，按当次绘制 quad 的宽度判断——≈全屏宽就跳过居中、UI 宽才收。这是唯一能"特效全屏 + UI 居中"两全的做法，代价是改模拟器代码 + 重编。
-2. **（侦察）定位 0x822 烘焙器**：用附录 C 末尾的 build2 日志法——在 tex==0x027b0000 的 0x822 绘制时记录写 slot12 表的 CPU PC，一次实测定案。定到写表者之后，要么单独豁免，要么发现它本就该全屏而结案。
-
-**别做的事**：恢复那 7 个 quad+UV 变体的补丁（会用缝换回黑影）；继续摘 0x5exxxx 函数（摘一个少一块 UI）。
+- The patch vehicle is a standard `patch.yml` (be32 words); it works under LLVM, no emulator changes needed
+- PPU patch addresses = decrypted EBOOT vaddrs (dump/disassembly tooling in `tools/`; remember capstone `skipdata` mode or disassembly stops at data)
+- **A set of `li 1280→2560` immediate patches causes a random "kaleidoscope"** (layout takes multiple paths) — abandoned; same for the v11 li group, keep them off
+- Live guest memory base measured at `0x400000000` (pymem reads at base+vaddr verify whether patches are live)
 
 ---
 
-## 工具链
+## The Next Path (boost-blur seam) — starting point, written down
 
-- `uw_measure.py` — tile pitch + 主相机投影 m00 活体读取（pymem，自动找 ASLR 基址）
-- `uw_gdb_trace.py` — RPCS3 GDB stub 断点采集（Z0 断点 + 任意寄存器 + 内存 deref）
-- `uw_vp_disasm.py` / `uw_vp_*.py` — RSX 顶点着色器微码反汇编 / 抓包绘制挖掘
-- `uw_pack_re.py` / `uw_pack_patch.py` / `uw_pack_center640.py` — pack 容器（PIDX/AXL）解析/补丁/LAYO 加宽（只操作你自己的游戏文件；带完整性校验的资源会弹 "Game data is corrupted"，默认排除）
-- `uw_cgb_fix.py` — shaders.dat 内 .cgb 微码补丁器
-- `uw_harness*.sh` / `postkey.ps1` — 自动化 boot→导航→3D 测试循环、按键注入
-- `uw_guest.py` / `uw_findbase.py` / `uw_poke_desc.py` — 客体内存 dump/探基址/活体戳
+**Symptom**: during boost, the 3D motion-blur trail shows a vertical seam line. Everything else is fine; the game is fully playable.
 
-## 文档
+**Already established (appendix D — no need to re-derive)**:
 
-- `docs/COLDSTART.md` — 冷启动交接（先读它）
-- `docs/HANDOFF.md` — 编年调试日志（全部过程，含失败路线）
-- `docs/BAKER_FINDING.md` — HUD 烘焙器全考据（附录 A：35 族清单；B：文字渲染器；C：RSX 抓包法；D：模糊链终判）
-- `docs/UW_PACK_RE.md` — pack/PIDX/AXL 格式文档
-- `docs/UW_VP_OFFSET.md` — HUD 偏移的 VP 微码分析
+- Motion blur = 3 passes × 7 taps sampling the main display texture `0x027b0000`; shader VP local addresses (low 24 bits) `0xf3d181 / 0x7b01 / 0xabf81` are **runtime-allocated** — they don't exist as literals in the EBOOT, static search is futile
+- All three passes use the **0x822 dummy-quad composite path**: slot0 all-zero, slot12 = shared float table **`@0x81eb1e04`**; emitter at `0x9b1d8` (with ori 0x822 format commands at `0x9b420` / `0x9b7f8`)
+- This path **does not go through** the 36 patched writers (those emit 0x1032/0x1432 real vertices, slot0 non-zero). The blur chain itself is not compressed — **there are no more functions to strip**; stripping more only eats UI
+- The seam is the boundary between the fullscreen blur region and everything else — **not** a compressed blur writer still hiding somewhere
 
-## 已知未竟（除分割线外）
+**Two viable routes**:
 
-- tile1/2（深度/雾效渲染目标）的 1280 来源：tier 预设表，待定位（彩虹边缘源）
-- dialog.ark / mechroom_develop.ark / quest_clear 的逐资源完整性校验（CRC32 @0x653aa0）逆向
+1. **(The right way) Emulator-side runtime gating in build2**: hook the existing `RPCS3_UW_HUD` chain and gate per-draw by quad width — near-fullscreen quads skip centering, UI-width quads get centered. The only way to have both "effects fullscreen" and "UI centered". Cost: emulator code change + rebuild.
+2. **(Recon) Locate the 0x822 baker**: use the build2 logging method at the end of appendix C — on 0x822 draws with tex==`0x027b0000`, record the CPU PC that writes the slot12 table. One measured run settles it. Then either exempt that writer specifically, or confirm it should stay fullscreen and close the case.
 
-## 致谢
-
-- **[@wagrenier](https://github.com/wagrenier)** — 星海（Star Ocean）系列补丁的作者。3D 宽屏"改原料不改公式"的思路学自他的作业，特此致谢。
-
-## 免责
-
-仅为学习/研究目的的游戏修改工具与补丁。不包含任何游戏数据文件；所有 pack 工具只操作用户本地合法持有的游戏副本。游戏版权归 Bandai Namco / Artdink 所有。
+**Do NOT**: re-patch the 7 quad+UV variants (trades the seam for the black band); strip more `0x5exxxx` functions (each one takes a chunk of UI with it).
 
 ---
 
-## English summary
+## Toolkit
 
-A 32:9 (7680×2160) ultrawide patch for **Macross 30 (BLJS10184)** on **RPCS3 v0.0.32-16803**, plus the reverse-engineering toolkit used to build it.
+- `uw_measure.py` — live tile-pitch / projection-matrix m00 probe (pymem, auto ASLR base)
+- `uw_gdb_trace.py` — RPCS3 GDB stub breakpoint tracer (Z0 breakpoints + arbitrary registers + memory deref)
+- `uw_vp_disasm.py` / `uw_vp_*.py` — RSX vertex-program microcode disassembler / capture draw miners
+- `uw_pack_re.py` / `uw_pack_patch.py` / `uw_pack_center640.py` — pack container (PIDX/AXL) parser/patcher/LAYO widener (operates only on your own game files; integrity-checked resources trigger "Game data is corrupted" and are excluded by default)
+- `uw_cgb_fix.py` — .cgb microcode patcher inside shaders.dat
+- `uw_harness*.sh` / `postkey.ps1` — automated boot→navigate→3D test loops, key injection
+- `uw_guest.py` / `uw_findbase.py` / `uw_poke_desc.py` — guest memory dump / base finder / live pokes
 
-**What works (all verified on hardware)**: native 32:9 3D projection; HUD, menus and text natively centered to the middle 16:9 region via CPU quad-baker patches; movies stay stretched 16:9 (pre-rendered). One cosmetic leftover: a seam line on the boost motion blur.
+## Docs (Chinese)
 
-**Key techniques** (full write-up in the Chinese sections above and `docs/`):
+- `docs/COLDSTART.md` — cold-start handoff (read this first)
+- `docs/HANDOFF.md` — chronological debug log (everything, including failed routes)
+- `docs/BAKER_FINDING.md` — HUD baker analysis (appendix A: the 35-function family; B: text renderer; C: RSX capture method; D: blur-chain final verdict)
+- `docs/UW_PACK_RE.md` — pack/PIDX/AXL format documentation
+- `docs/UW_VP_OFFSET.md` — HUD offset VP microcode analysis
 
-- *3D*: aspect ratio is computed per-frame from integer width via `fcfid`/`frsp`; changing `frsp fX,f13` to `fadds fX,f13,f13` doubles the width at the source. Patch the ingredients, not the matrix.
-- *HUD*: vertex data is CPU-baked per corner by a family of 36 quad-writer functions reading runtime W/H from `0x5bba04` (`ndc = (px - W/2)/(W/2)`). Centering = 2 instructions per x-corner: `fsubs→fdivs` then `fdivs→fmsubs(f,f,0.5,0.5)`, yielding `px/(2A) - 0.5`. No static constants exist — find the writers, not the numbers.
-- *Fullscreen effects exemption*: 7 quad+UV variants also draw fullscreen effects and are left unpatched (patching them squashes effects into a black band). Static PPC patches can only gate at whole-function granularity.
-- *Text renderer*: `0x1a1244`/`0x1a1a54` batch loop clobbers `f12` (=K) with a UV divisor `frsp`; fix relocates texH to `f13`. Verify the whole call tree is FP-write-free before relying on a volatile register across `bl`.
-- *Next path (boost-blur seam)*: blur taps use the `0x822` dummy-quad composite path (shared float table `@0x81eb1e04`, emitter `0x9b1d8`), not the 36 patched writers. Fix = emulator-side runtime gating by quad width (build2 `RPCS3_UW_HUD` hook chain), or locate the table writer via build2 logging on draws with tex==`0x027b0000`. Do not re-patch the 7 variants (trades seam for black band) and do not strip more writer functions (eats UI).
+## Open items (besides the seam)
 
-Requires RPCS3 v0.0.32-16803 exactly (newer builds can't play this game's videos — issue #17485). Enable the patch, check **Stretch To Display Area**, play fullscreen. No game data included; tools operate only on your own legally obtained copy. All rights to the game belong to Bandai Namco / Artdink.
+- tile1/2 (depth/fog render targets) 1280 source: tier preset table, still unlocated (rainbow-edge source)
+- Per-resource integrity check (CRC32 @0x653aa0) reverse engineering for dialog.ark / mechroom_develop.ark / quest_clear
 
-**Credits**: 3D widening approach ("patch the width source, not the projection formula") learned from [@wagrenier](https://github.com/wagrenier)'s Star Ocean patch work — thanks!
+## Credits
+
+- **[@wagrenier](https://github.com/wagrenier)** — author of the Star Ocean patch series. The 3D widening approach ("patch the width source, not the projection formula") was learned from his work. Thank you!
+
+## Disclaimer
+
+Game modification tools and patches for educational/research purposes only. No game data files are included; all pack tools operate solely on the user's own legally obtained copy. All rights to the game belong to Bandai Namco / Artdink.
