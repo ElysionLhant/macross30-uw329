@@ -122,13 +122,15 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 - `uw_harness*.sh` / `postkey.ps1` — automated boot→navigate→3D test loops, key injection
 - `uw_guest.py` / `uw_findbase.py` / `uw_poke_desc.py` — guest memory dump / base finder / live pokes
 
-## Docs (Chinese)
+## Docs (Chinese unless noted)
 
-- `docs/COLDSTART.md` — cold-start handoff (read this first)
+- `docs/FINAL_HANDOFF.md` — the two-weekend wrap-up: final state, open items with entry points, and everything you must remember before resuming (read this first)
+- `docs/COLDSTART.md` — cold-start handoff
 - `docs/HANDOFF.md` — chronological debug log (everything, including failed routes)
 - `docs/BAKER_FINDING.md` — HUD baker analysis (appendix A: the 35-function family; B: text renderer; C: RSX capture method; D: blur-chain final verdict)
 - `docs/UW_PACK_RE.md` — pack/PIDX/AXL format documentation
 - `docs/UW_VP_OFFSET.md` — HUD offset VP microcode analysis
+- `docs/publishing/` — ready-to-post release drafts: Reddit (EN), PSXPlace (EN), Bilibili (中文)
 
 ## Open items (besides the seam)
 
