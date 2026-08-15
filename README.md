@@ -137,6 +137,8 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 
 ## Credits
 
+- **[ElysionLhant](https://github.com/ElysionLhant)** — project owner: direction, all on-hardware testing, RSX captures, and the stubbornness to see a 1280-pixel wall through to the end
+- **Kimi (Moonshot AI)** — reverse engineering & patch development: baker family analysis, PPC encodings, text-renderer register surgery, toolkit
 - **[@wagrenier](https://github.com/wagrenier)** — author of the Star Ocean patch series. The 3D widening approach ("patch the width source, not the projection formula") was learned from his work. Thank you!
 
 ## Disclaimer

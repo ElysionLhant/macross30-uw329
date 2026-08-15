@@ -14,7 +14,7 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
     Games:
       "Macross 30":
         "BLJS10184": [ All ]
-    Author: Kimi
+    Author: "ElysionLhant & Kimi"
     Notes: "32:9 for Macross 30. Stretch To Display Area + fullscreen. 3D widened; HUD/text centered; movies stay 16:9. Minor seam on boost blur."
     Patch Version: 1.0
     Patch:
