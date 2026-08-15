@@ -34,7 +34,7 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x008df4c0, 0x3a4ccccd ]
       - [ be32, 0x008dfa18, 0x3a4ccccd ]
       # UW 居中补丁 (BAKER_FINDING 11-word, writer 0x5e5ea4, x: (px/A)*0.5-0.5 => [-.5,.5] 居中, y 不动)
-      - [ be32, 0x005e5fcc, 0xc1610088 ]
+      - [ be32, 0x005e5fcc, 0xc162599c ]
       - [ be32, 0x005e5fd0, 0xedad0024 ]
       - [ be32, 0x005e5fe4, 0xedad5af8 ]
       - [ be32, 0x005e6008, 0xc5b90008 ]
@@ -271,17 +271,3 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x1a1c0c, 0xfda03818 ]  # frsp f12,f7 -> frsp f13,f7（texH 挪窝，保 f12=K）
       - [ be32, 0x1a1c1c, 0xed4a6824 ]  # fdivs f10,f10,f12 -> fdivs f10,f10,f13
       - [ be32, 0x1a1c20, 0xed086824 ]  # fdivs f8,f8,f12  -> fdivs f8,f8,f13
-      # ---- 0x5e5ea4 混画门控（头像/对话框两全, 10 词）----
-      # 角点公式 (px/A)*fS-fS: fS=0.5 居中(LAYO), fS=1.0 原式(帧缓冲 quad)
-      # 跳板 0x7009d0 改道 0x8defd4 洞例程(无引用零填充区): LR 判别 (0x79678=头像路径 -> fS=1.0, 其余 fS=0.5)
-      # 写出器 0x5e5f08(nop) 把 r12 落 writer_frame+0x88; 种子槽 0x5e5fcc 改从 0x88(r1) 读
-      - [ be32, 0x8defd4, 0x7d6802a6 ]  # mflr r11            ; LR = 调用方返回地址
-      - [ be32, 0x8defd8, 0x556c043e ]  # clrlwi r12, r11, 16 ; 取低16位
-      - [ be32, 0x8defdc, 0x398c6988 ]  # addi r12, r12, -0x9678 ; == 0x79678(头像路径) 则为 0
-      - [ be32, 0x8defe0, 0x7d8c0034 ]  # cntlzw r12, r12     ; 相等 -> 32
-      - [ be32, 0x8defe4, 0x558cd93e ]  # srwi r12, r12, 5    ; 32>>5 = 1, 其它 -> 0
-      - [ be32, 0x8defe8, 0x558c3830 ]  # slwi r12, r12, 7    ; 1<<7 = 0x80
-      - [ be32, 0x8defec, 0x398c3f00 ]  # addi r12, r12, 0x3F00 ; -> 1.0(头像)/0.5(底座) bits
-      - [ be32, 0x8deff0, 0x4bd06eb4 ]  # b 0x5e5ea4
-      - [ be32, 0x7009d0, 0x481de604 ]  # tramp: b 0x5e5ea4 -> b 0x8defd4
-      - [ be32, 0x5e5f08, 0x91810088 ]  # nop -> stw r12, 0x88(r1)

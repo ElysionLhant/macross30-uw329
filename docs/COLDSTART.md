@@ -1,81 +1,74 @@
-# Macross 30 × RPCS3 32:9 项目 — 冷启动 Handoff（2026-08-10 深夜）
+# Macross 30 × RPCS3 32:9 项目 — 冷启动 Handoff（2026-08-15 深夜）
 
-> 给全新会话/未来的自己：读完这一份即可上手。细节考据在 `docs/HANDOFF.md`（编年日志）。
+> 给全新会话/未来的自己：读完这一份即可上手。编年日志在 `docs/HANDOFF.md`，烘焙器考据在 `docs/BAKER_FINDING.md`，事故编年在 `docs/FINAL_HANDOFF.md`。
 
 ## 0. 一句话现状
 
-**3D 32:9 已稳（日常可玩）；刚完成对 pack 数据文件的 LAYO 宽屏补丁（812+266 处原位修改，已写盘带备份），尚未实机验证——下次开机第一件事就是测它。**
+**3D / HUD / 文字 32:9 全部落地并实机验证，日常可玩。唯一开放问题：通讯场景监视器头像横向缩半（混画写出器 0x5e5ea4）——三版门控补丁均告失败，已回滚到"脸缩但其余全对"的全补丁状态。**
 
-## 1. 环境速查
+## 1. 环境速查（2026-08-15 版）
 
-- 机器：9800X3D / RTX 5090 / 31.5GB RAM / Win11 / 5120×1440（32:9）屏（VirtualScreen 报告值；物理 7680×2160 也是 32:9）
-- 游戏（用户的盘，勿删）：`C:\Users\Elysion\Desktop\MACROSS\BLJS10184-[日版-超时空要塞30 连接银河的歌声-射击类]\`（JB 格式）
-- 日常模拟器：`Downloads\rpcs3-v0.0.32-16803\` — **玩用这个**。已含预置安装数据（`dev_hdd0\game\BLJS10184_INSTALL\`，USRDIRdata junction 绕过两个 RPCS3 bug；PARAM.SFO CATEGORY=GD）+ 固件 + 存档实体
-- 新版模拟器：`Downloads\rpcs3-v0.0.37-18022\` — 跑别的游戏；**放不了 Macross 30 影片**（issue #17485）
-- 定制源码/构建：`桌面\rpcs3-src`（commit ff84e7c6，26 子模块齐；含 EPERM 竞态补丁+27 诊断点+UW hook 等未提交改动）+ `rpcs3-src\build2\`（实验构建，**非日常**）
-- 仓库/工具：`桌面\UW32_Macross30\`（tools\、data\、docs\、patches\）；`桌面\uw_venv`（pymem/capstone Python 环境，勿动路径）
-- 代理：Clash @ 127.0.0.1:7890（GitHub/LunarG 走它；pypi 用清华镜像）
+- 机器：9800X3D / RTX 5090 / Win11 / 7680×2160（32:9）屏
+- 游戏（勿删）：`桌面\MACROSS\BLJS10184-[日版-超时空要塞30 连接银河的歌声-射击类]\`
+- **日常模拟器 = `桌面\rpcs3-src\build2\bin\rpcs3.exe`**（定制版：0.0.32-16803 + EPERM 竞态补丁 + UW hooks + **ZCULL 关机守卫**）。桌面有 `Macross 30 (32x9).lnk` 快速启动器（图标 = 游戏 ICON0 转 ico，存于 `UW32_Macross30\assets\`）
+- 官方原版备用：`Downloads\rpcs3-v0.0.32-16803\`（存档与 build2 符号链接共享；**新版 0.0.37 放不了影片，issue #17485**）
+- 仓库：`桌面\macross30-uw329`（公开分发仓，github.com/ElysionLhant/macross30-uw329）+ `桌面\UW32_Macross30`（工作仓，含内存 dump/抓包，未公开）；`桌面\uw_venv`（pymem/capstone Python，勿动路径）
+- 补丁本体：`rpcs3-src\build2\bin\patches\patch.yml`（242 词；与分发仓同步；`patch_iso_full.yml` 是其备份）
+- 代理：Clash @ 127.0.0.1:7890
 
-## 2. 日常玩用配置（已验证稳定）
+## 2. 日常玩用配置（已验证）
 
-官方 16803 + 专属配置（VFS 指盘、Core: All Timers + RPCS3 Scheduler、Write Color Buffers）+ `patches\patch.yml` 7 条（6 处 3D 投影 frsp→fadds + 0xabde80 惰性项）+ patch_config.yml 启用。效果：3D 投影正确 32:9（m00=0.487）；UI/影片 16:9 拉伸属预期。**必须全屏玩**（窗口模式会横向压缩是正常的；专属配置已设开机全屏）。放片稳定性：补丁版 10/10 验收过；EPERM 竞态补丁在 build2 源码里，官方目录行为照旧（Trace 日志勿开，会掩盖竞态且拖慢）。
+build2 + 专属配置（VFS 指盘；Core: LLVM + All Timers + RPCS3 Scheduler；Video: Write Color Buffers + Stretch To Display Area；Advanced: **Driver Wake-Up Delay 200µs**——20 没拦住 Dead FIFO，再犯就上 RSX FIFO Accuracy: Atomic）+ `patch.yml` 242 词。**必须全屏玩**。
 
-## 3. pack LAYO 补丁（现役=排除版，实机干净）+ HUD 居中进展
+已知残留（全部 cosmetic，可正常通关）：冲刺运动模糊一条分割线（Next Path I）、通讯场景头像缩半（Next Path II）、Dead FIFO 偶发（激战 ~25min 一次，ZCULL 守卫保证它只留日志不弹窗）。
 
-**现役文件状态**（均实机验证干净）：
-- `data.dat` = selective（排除 cockpit+dialog.ark，313 ark 宽度 2560 化）
-- `data2.dat` = cockpitin（cockpit/hud 全补丁 2560 化，安全）
-- `shaders.dat` = 原件（cgbfix 变体已证伪退役：HUD 不用 vs_ScreenToClipspace）
-- 备份 `.bak` 完好；回滚 `python data/uw_pack_patch.py --restore-from-bak`
+## 3. 血泪雷区（每条都是真炸过的）
 
-**校验雷区（永久排除）**：dialog.ark、mechroom_develop.ark、quest_clear 目录——这三家有逐资源字节级校验，动了就弹 "Game data is corrupted"。
+- **`dev_hdd0\game\BLJS10184_INSTALL` 覆盖目录是最高危物品**：游戏加载资源先探它再读光盘。周末实验包（data.dat 变体十几个 + shaders.dat）在里面插队，导致机库 `vector<T> too long` 自杀 + `Game data is corrupted`。已整体改名 `BLJS10184_INSTALL.off` 隔离，游戏从光盘重装了原版。**pack 工具实验后必须清理这里，否则它对一切模拟器、一切补丁状态生效，怎么 A/B 都洗不清自己。**
+- **输入配置**：脚本开车需要 `config\input_configs\active_input_configurations.yml` = AutoTest（键盘映射：X=Cross、Return=Start、W/S/A/D=左摇杆）；用户手柄玩要改回 Default。
+- **GDB stub（127.0.0.1:2345）**：gdb 客户端断开即 stub 线程死，**下次连接必须重启模拟器**；断点命中后必须**解析停止回复里的 thread 并 Hg 过去**，否则读到的是 main_thread 的寄存器（全是别人的）。
+- **截图**：uw_gameview.ps1 的 PrintWindow 对 Vulkan 窗口**常拿陈旧帧**；全屏独占时 uw_desktop.ps1 也瞎。**要拿真帧就切窗口模式**（专属配置 Miscellaneous 里把 fullscreen 改 false，验完改回）。
+- **着色器预载**：换过游戏数据后首次启动，775+ 管线对象预载，"Compiling 0/N" 可能几分钟不动——不是死了，是在编。
 
-**HUD 居中状态（2026-08-11 凌晨定案）**：
-- 三个偏移候选全部证伪（shader 立即数 / EBOOT vec4 0xab1f18 / LAYO 平移）——驾驶舱 HUD 位置是 CPU 烘焙代码每帧现算，不读 LAYO 坐标
-- 下轮两条引线：A. 逐 pass 视口偏移（从 data/uw_capture.pkl 挖 HUD pass 的 VIEWPORT_OFFSET，640→1280 即居中）；B. 烘焙函数本体（0xb0b90 上传环的 TOC 跳板后真身 0x62988c 族）
-- 分析报告：data/UW_VP_OFFSET.md；工具：uw_vp_disasm.py（VP 反汇编）、uw_pack_center640.py（元素平移）、uw_cgb_fix.py
+## 4. 开放问题一：冲刺残影分割线（Next Path I）
 
-## 3b. tile1/2（彩虹源）进展
+机制已查明（BAKER_FINDING 附录 D）：运动模糊走 0x822 dummy-quad 合成路径（slot12 共享表 @0x81eb1e04，发射器 0x9b1d8），不经 36 个已补丁写出函数，无函数可摘。路线：build2 运行时按 quad 宽门控（RPCS3_UW_HUD 链），或 build2 日志法定 0x822 写表者（tex==0x027b0000 时记录写表 CPU PC）。**别恢复 7 个 quad+UV 变体补丁（缝换黑影），别再摘 0x5exxxx 函数（摘一个少一块 UI）。**
 
-- 链已实锤：gcm init（开机 5.5s）→ sys_rsx_context_attribute(0x300) ← 表面管理器 0x574da8(w,h)，pitch=w×4
-- 1280 来源 = tier 预设（特效档位表），待定位（下轮：0x575690/0x575a60 族的参数来源，或断 0x574da8 记录全部 15 tile 调用序列）
-- 注意：tile 配置在开机 5.5s 完成，GDB 断点必须 ~4s 内部署（见 HANDOFF.md 对应节）
+## 5. 开放问题二：通讯场景头像缩半（Next Path II，本轮主战场）
 
-## 4. 若验证不顺利的排查序
+**机制（全部实机验证）**：
 
-- 图层没变 2560 → 确认加载的是被打补丁的 data.dat 实体（junction 拓扑：`旧版\dev_hdd0\game\BLJS10184_INSTALL` 是 junction → `rpcs3-src\build\bin\...` 实体）
-- 彩虹仍在但 pitch=0x2800 → 是显示面仍 1280（谎报/li 没开）：B 路线需显示面也 2560（RPCS3_UW_329=1 或 li 组，见 HANDOFF.md）
-- 启动即崩 → 先回滚确认是补丁引起；查 uw_pack_patch.log
-- 画面正常但 UI 仍 16:9 → 说明 UI 层不在已改 LAYO 集内，记录现象再议（35 处 rect 待定项）
+- 头像与九宫格对话框底座、座舱 HUD 底座共用写出器 `0x5e5ea4`（混画）。4 个调用点：`0x4c210`/`0x4c9ec`/`0x4ca60`（九宫格对话框类）+ `0x79674`（元素装配点）
+- 角点公式 `(px/A)·fS − fS`：**fS=0.5 → px/(2A)−0.5（居中 16:9 带）；fS=1.0 → px/A−1 = 原式（全宽）**。头像要 1.0（监视器 3D 投影叠加层，帧缓冲坐标系）；一切底座/HUD 要 0.5
+- 通道机制（已验证可用）：洞例程算 fS → r12 → 写出器 nop（`0x5e5f08`）stw 到 `writer_frame+0x88` → 种子槽（`0x5e5fcc`）`lfs f11, 0x88(r1)`。全程唯一调用 `0x5bba04` 只碰 r3
 
-## 5. 工具速查（UW32_Macross30\）
+**三版失败实录**：
 
-- `tools\uw_measure.py` — tile pitch + 主相机 m00（判定用；ASLR 自动找基址）
-- `tools\uw_harness.sh <official|build2> [out.png]` — 一键 boot→导航→3D 截图
-- `data\uw_pack_re.py` — pack 解析/提取（info|list|extract|scan|layos|hashcheck）；`data\UW_PACK_RE.md` — 格式文档
-- `data\uw_pack_patch.py` — LAYO 补丁器（--dry-run/--apply/--restore-from-bak）
-- `tools\uw_gdb_trace.py` — GDB 断点采集（用法见下「雷区」）
-- `tools\uw_guest.py / uw_findbase.py / uw_poke_desc.py` — 客体内存 dump/探基址/戳描述体
-- `tools\uw_rrc_parse.py / uw_rrc_trace.py` — RSX 抓包解析
+- **v1（x1>1280 判帧缓冲 quad）**：失败——**底座也是帧缓冲坐标**（x1 一样超 1280），一刀切冤杀全部底座。坐标数值上头像/底座不可分
+- **v2（LR 低16==0x9678 判 0x79674）**：失败 + 低级 bug——`cntlzw` 相等得 32、不等得 17-20，漏写 `srwi` 导致对话框 fS≈0.77-0.81，菜单全飞。**`cntlzw` 永远不是布尔值**
+- **v3（修好的 LR 判别）**：Load Save/菜单底座完美恢复，但**座舱 HUD 底座全飞**——`0x79674` 装配点同时服务头像和座舱 HUD，1.0 把 HUD 拉成全宽
 
-## 6. 雷区（全是实测换来的，别再踩）
+**当前认知**：0x79674 至少服务"要 0.5 的座舱 HUD"；头像走哪条路**尚未实锤**（0x79674 或九宫格类）。下一步必须拿到现场数据再定判别器，候选：
 
-- **v11/v12 li 2560 补丁组（0x57fd78/0x580158/0x5ac19c/0x5ac648/0x5ad560/0x3f388c）间歇崩溃**（视频初始化窗口，0x575484），已退役；build2\patches\patch.yml 是实验残留，**别当日常**
-- **EBOOT 控制流类补丁=禁区**：bl 重定向到代码洞必崩 JIT（HLE hook、trace cave 均已证伪）；只做 in-place 数据流补丁（li/frsp/值替换）
-- **GDB 断点**：仅 `PPU Decoder: Interpreter (static)` 下可用（0.0.32 无 fast）；**一次 rpcs3 启动=一次 GDB 会话**（断连即死需重启）；continue 只有 vCont；GDB Server 默认 127.0.0.1:2345
-- **patch.yml 格式**：serial 具体则 title 必须具体；Patch 与 Games 同级；app_version 是序列 `[ All ]`；patch_config.yml 放 config\ 子目录（无 Games 层）；**不写注释行**
-- **日志 level 保持 ≤4**（Trace=6 会 100% 掩盖 EPERM 竞态且慢）
-- 杀 rpcs3 后等 ~10-25s 死透再启动，否则新实例自杀
-- PowerShell 脚本含 CJK 路径需 BOM；启动用 bash 直起 `(./rpcs3.exe "路径" &)`
-- MSBuild 并行参数在 Git Bash 用 `-m` 不用 `/m`；cmake 用 VS2022 全路径（见 HANDOFF.md）
-- build2 源码 git 状态：大量未提交定制（EPERM 补丁、诊断点、cellGcmSetTileInfo UW hook、cellVideoOut RPCS3_UW_329 开关）——别 checkout 掉
+1. **quad 宽度窗**：头像 ≈ 监视器宽（估 600-1000px），HUD 表盘小（100-500），对话框宽（1500+）——w∈[600,1200] 给 1.0，其余 0.5
+2. **UV 跨度**：头像用角色整图（UV≈[0,1]），HUD/九宫格用图集子矩形（UV 跨度小）——r7 指向的 UV 块可查
+3. **场景标志**：通讯场景与飞行场景互斥，找内存里的场景标志位
 
-## 7. 路线全景（为什么现在是 pack 补丁）
+**取证工具（已备好，吸取教训修过）**：`tools\uw_writer_trace2.py`——GDB 断 `0x7009c4`（0x5e5ea4 唯一跳板），解析停止线程后读 LR + r4 八坐标 + r6/r7（色/UV 指针）。用法：游戏**完全进场景后**再启动它（预载期启动只会空转）；每次连接前**重启模拟器**（gdb 线程一次性）。采集目标：飞行场景（HUD quad 宽度/UV 实测）+ 通讯场景（头像 quad 实测），然后定阈值。洞例程放 `0x8defd4`（25 零词区，lis 扫描确认无引用），空间管够。
 
-3D 投影（fadds，已通）→ 显示面 2560（谎报/li，已通）→ **图层 2560（LAYO 文件补丁，本次待验）** → UI 正解（HUD 居中，shader 立即数问题，最后做）。tile1/2 深度/雾效层的 1280 来源经全排除（21 li 立即数/谎报/模式表/工厂 GDB 断点/427 描述体活戳/结构体拷贝）后锁定数据文件，遂逆向 pack——若本次验证通过，B 路线（原生 32:9）基本闭环；剩余只有 HUD 居中与 137 张 1280×720 DDS 纹理内容级重制（可选）。
+**回滚单位**：`patches\patch_iso_full.yml` = 无门控全补丁（脸缩，其余全对）。洞例程与通道的词表见 build2 `patches\patch.yml` 的 git 历史（分发仓 commit c051d69 的 v3 版，已撤）。
 
-## 8. 会话礼仪（对这个项目）
+## 6. 工具速查（UW32_Macross30\）
 
-- git 操作（commit/push）须用户明确同意；游戏文件/盘/备份一律勿删
-- 改配置/补丁后先在 handoff 记一笔再跑实验；实验用 harness 无人值守循环
-- handoff 双份同步：`UW32_Macross30\docs\HANDOFF.md` 与桌面根 `HANDOFF.md`（内容一致）
+- `tools\uw_writer_trace2.py` — 混画取证 GDB 断点（用法见 §5）
+- `tools\postkey.ps1` — 向游戏窗投递按键（配 AutoTest 输入；X=Cross、Return=Start、W/S/A/D=摇杆）
+- `tools\uw_desktop.ps1 / uw_gameview.ps1` — 截图（雷区见 §3）
+- `data\eboot_mem.bin` — EBOOT 解密镜像（capstone skipdata 反汇编用）；客体内存基址 `0x400000000`
+- PPC A-form 备忘：**frC 在 bits 10-6，frB 在 bits 15-11**；fdivs XO=18 / fmsubs XO=28 / fmuls XO=25（opcode 59）；frsp/fmr/带 Rc 的注意 opcode 63/字段序；lwz opcode **32**（35 是 lbzu）
+
+## 7. 编年索引
+
+- `docs\FINAL_HANDOFF.md` — 两个周末收官 + 事故编年（Dead FIFO / ZCULL / 覆盖目录 / 彩虹 / 混画三败）
+- `docs\HANDOFF.md` — 全部调试编年（含失败路线）
+- `docs\BAKER_FINDING.md` — 烘焙器全考据（附录 A-D）
+- `docs\publishing\` — Reddit/PSXPlace/B站 发布稿

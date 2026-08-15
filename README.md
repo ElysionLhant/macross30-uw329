@@ -123,20 +123,17 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 
 **Do NOT**: re-patch the 7 quad+UV variants (trades the seam for the black band); strip more `0x5exxxx` functions (each one takes a chunk of UI with it).
 
-## The Next Path II (comm-portrait squash) — FIXED, pending final sign-off
+## The Next Path II (comm-portrait squash) — OPEN, gate attempts reverted
 
-**Symptom (resolved)**: in story/comm scenes, the on-monitor character portraits rendered at half horizontal width.
+**Symptom (present in the shipped patch)**: in story/comm scenes, on-monitor portraits render at half horizontal width. Everything else is correct.
 
-**Root cause (5-round bisect, verified on hardware)**: the portraits are drawn by writer **`0x5e5ea4`** in **framebuffer pixel space** (quad coords come from the 3D projection of the in-world monitors), while the same writer draws LAYO-space nine-patch dialog quads that need centering. A genuine mixed painter — centering it squashed portraits, exempting it stretched dialog frames.
+**Root cause (verified)**: the portraits and the nine-patch dialog frames / cockpit HUD plates share one writer, `0x5e5ea4`, with **identical framebuffer-space coordinates**. The patched corner math `(px/A)·fS − fS` centers at fS=0.5 and reproduces the original formula at fS=1.0 — but portraits want 1.0 while every frame/plate wants 0.5.
 
-**Fix (implemented)**: make the writer's seed factor **fS switch per call** — the patched corner math `(px/A)·fS − fS` equals the centered formula at fS=0.5 and the original formula at fS=1.0, so one writer serves both quad families. The discriminator is the **caller's return address** (coords alone can't separate the two families — dialog frames are framebuffer-space too): LR low16 == `0x9678` selects the portrait path (`0x79674` assembly). 10 extra patch words:
+**Three failed gate attempts (all reverted; lessons in docs/COLDSTART.md §5)**:
 
-- the `0x7009c4` trampoline's final branch now lands on an 8-word gate routine at `0x8defd4` (a zero-fill gap verified unreferenced): `mflr` → compare → `cntlzw` → shift/mask, yielding `0x3F80`/`0x3F00` (1.0/0.5) in r12
-- the writer's free nop at `0x5e5f08` stores r12 to `writer_frame+0x88`; the seed slot at `0x5e5fcc` loads it (`lfs f11, 0x88(r1)`). r12 is clobber-safe: the only call in between (`0x5bba04`) touches r3 only
-
-Edge rule: LR compare is exact — dialog sites (`0x4c214`/`0x4c9f0`/`0x4ca64`) all take fS=0.5. Verified on hardware: Load Save frames, unit labels, item menus all correct; **final visual sign-off on a comm scene (faces + frames simultaneously) is the only open item.**
-
-**Hard-won gotcha**: an earlier revision of the gate forgot the `srwi` after `cntlzw` — `cntlzw` yields 32 on equality but 17–20 on inequality, so dialogs got fS≈0.77–0.81 instead of 0.5 and every menu frame silently moved off-screen. `cntlzw` alone is never a boolean.
+1. *x1 > 1280 discriminator* — dialog plates are framebuffer-space too; killed them all.
+2. *LR-callsite discriminator (0x79674 → 1.0)* — `0x79674` also serves cockpit HUD plates; stretched the entire HUD. (Plus a hard-won lesson: `cntlzw` is never a boolean — missing `srwi` made dialogs render at fS≈0.77.)
+3. Current understanding: **no static discriminator found yet** — next step is field data (GDB trace at the `0x7009c4` trampoline logging LR + quad coords + UV pointers in flight and comm scenes; tools and cave space already prepared, see COLDSTART §5), then a width-window / UV-span / scene-flag gate. The fS channel mechanism itself (r12 → writer_frame+0x88 → seed lfs) is proven working.
 
 ---
 
