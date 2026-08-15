@@ -1,7 +1,7 @@
 VFS:
   /dev_bdvd/: C:/Users/Elysion/Desktop/MACROSS/BLJS10184-[日版-超时空要塞30 连接银河的歌声-射击类]/
 Core:
-  PPU Decoder: Interpreter (static)
+  PPU Decoder: Recompiler (LLVM)
   Sleep Timers Accuracy: All Timers
   Thread Scheduler Mode: RPCS3 Scheduler
 Miscellaneous:
@@ -9,3 +9,7 @@ Miscellaneous:
 Video:
   Write Color Buffers: true
   Stretch To Display Area: true
+Advanced:
+  # Dead FIFO ("call 0x0" race) mitigation; raise further (e.g. 200) or set
+  # "RSX FIFO Accuracy: Atomic" if it still occurs. See README troubleshooting.
+  Driver Wake-Up Delay: 20

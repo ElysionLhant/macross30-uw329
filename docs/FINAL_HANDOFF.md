@@ -40,6 +40,11 @@
 - 静态补丁最小粒度 = 整个函数（每角点 2 指令位，无 code cave）；混画函数只能取舍或上模拟器侧门控。
 - 工作仓 `UW32_Macross30`（本地，含 117MB 内存 dump 与抓包）未公开；分析脚本与文档已全部并入分发仓。
 
+## 两个已处理的崩溃（2026-08-15，别重复查）
+
+- **主局：RSX Dead FIFO**——玩 25 分钟游戏骤停的真凶。FIFO 里出现 `call 0x0`：RSX 消费者读到了 PPU 还没写完的命令（rpcs3 已知竞态类，非本补丁引起）。缓解：每游戏配置 `Driver Wake-Up Delay: 20`（全局曾被压到 1）；复发再加到 200 或 `RSX FIFO Accuracy: Atomic`。
+- **次局：退出时 ZCULL_control 析构崩（host AV @base+0x7438f0）**——关机路径遍历已损坏的 MMIO 锁定页表（`RSXZCULL.cpp:23`），上游 master 代码相同（未修）。已在 build2 源码加 SEH 守卫（`unlock_pages_guarded`），崩窗变一行日志；客体早已停止，零实际影响。重编方法：VS2022 自带 cmake（不在 PATH）`--build build2 --config Release --target rpcs3`。
+
 ## 存档点
 
 - 分发仓：`github.com/ElysionLhant/macross30-uw329`（README 英文门面，docs 中文档案）

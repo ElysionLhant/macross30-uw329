@@ -18,6 +18,11 @@ A 32:9 (7680×2160) ultrawide patch for **Macross 30: Ginga o Tsunagu Utagoe (BL
 3. Enable the patch in the patch manager, check **Stretch To Display Area**, and play in **fullscreen** (horizontal squish in windowed mode is expected)
 4. PPU patches work under the LLVM recompiler. Do not use the interpreter (0.08 fps, debug only)
 
+## Troubleshooting
+
+- **"Dead FIFO commands queue state has been detected!" mid-game**: an RSX↔PPU command-stream race (a known RPCS3 issue class — the FIFO walker consumed a `call` whose target the PPU had not finished writing). Not caused by this patch. The bundled per-game config sets **Driver Wake-Up Delay: 20**; if it still occurs, raise it (e.g. 200) or set **RSX FIFO Accuracy: Atomic** in Advanced settings (costs some performance).
+- **Fatal Error dialog on exit (in `ZCULL_control`)**: a harmless teardown race in this RPCS3 build — all CPU threads and saves are already done when it happens. Our build2 source tree carries an SEH guard for it (`rpcs3/Emu/RSX/RSXZCULL.cpp`); on a stock 0.0.32-16803 the dialog may still appear on exit — safe to dismiss.
+
 ---
 
 ## How the patch works (the hard-won parts)
