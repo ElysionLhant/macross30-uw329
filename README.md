@@ -4,7 +4,7 @@ English below / 中文说明在下文。
 
 A 32:9 ultrawide patch set for **Macross 30: Ginga o Tsunagu Utagoe (BLJS10184)** running on **RPCS3 v0.0.32-16803**, plus the full reverse-engineering toolkit used to build it: pack container tooling, RSX vertex-program disassembler, GDB breakpoint tracer, and live-memory utilities.
 
-**State of the project**: 3D projection renders correctly at 32:9 (verified). HUD/menus are 16:9 (see docs for the ongoing native-UI work). Movies are pre-rendered 16:9.
+**State of the project**: 3D projection renders correctly at 32:9 (verified). HUD and menu text are natively centered to the middle 16:9 region (CPU quad-baker patch, verified). Movies are pre-rendered 16:9. One cosmetic leftover: a seam line on the boost motion blur.
 
 ---
 
@@ -12,7 +12,7 @@ A 32:9 ultrawide patch set for **Macross 30: Ginga o Tsunagu Utagoe (BLJS10184)*
 
 **这是什么**：Macross 30（BLJS10184）在 RPCS3 0.0.32-16803 上的 32:9 超宽屏补丁 + 全套逆向工具链。
 
-**当前效果**：3D 投影正确 32:9（已验收）；HUD/菜单 16:9（原生 UI 工程进行中）；影片为 16:9 预渲染。
+**当前效果**：3D 投影正确 32:9（已验收）；HUD/菜单文字原生居中到中央 16:9 区（CPU 烘焙补丁，已验收）；影片为 16:9 预渲染。残留：冲刺运动模糊有一条分割线（ cosmetic ）。
 
 ### 安装（补丁）
 1. 需要 RPCS3 **v0.0.32-16803**（新旧版本行为差异大，新版放不了本片，见 docs/HANDOFF.md）
@@ -39,7 +39,7 @@ A 32:9 ultrawide patch set for **Macross 30: Ginga o Tsunagu Utagoe (BLJS10184)*
 
 ### 已知未竟
 - tile1/2（深度/雾效渲染目标）的 1280 来源：tier 预设表，待定位（彩虹源）
-- 驾驶舱 HUD 居中：CPU 烘焙代码侧，两条引线见 COLDSTART §3
+- 冲刺运动模糊分割线：模糊 tap 走 0x822 dummy-quad 合成路径（不经 36 个已补丁写出函数），压区/非压区边界留缝；修法需 build2 运行时按 quad 宽门控或定 0x822 烘焙器
 - dialog.ark/mechroom_develop.ark/quest_clear 有逐资源完整性校验，改动会弹 "Game data is corrupted"——本工具链默认排除
 
 ### 免责
@@ -51,6 +51,7 @@ A 32:9 ultrawide patch set for **Macross 30: Ginga o Tsunagu Utagoe (BLJS10184)*
 
 ### What works
 - 3D projection renders native 32:9 (verified: main camera matrix m00 halved, 0.974→0.487)
+- HUD/menu natively centered to the middle 16:9 region via CPU quad-baker patch (36 writer functions + text renderers, verified on hardware)
 - EPERM race fix for movie playback (see HANDOFF.md)
 - Full pack container reverse engineering + patching tools (PIDX/AXL format, zlib/segs compression, integrity-check exclusions mapped)
 
@@ -72,5 +73,5 @@ Any game data. The tools operate only on your own legally obtained copy. All rig
 
 ### Roadmap (open items)
 - tile1/2 depth/fog render targets: 1280 source = tier preset table (see HANDOFF.md)
-- Cockpit HUD centering: CPU bake path (two leads in COLDSTART.md)
+- Boost motion-blur seam: blur taps go through the 0x822 dummy-quad composite path (not the 36 patched writer functions), leaving a boundary line; fix needs build2 runtime gating by quad width or locating the 0x822 baker
 - Per-resource integrity check (CRC32 routine @0x653aa0) reverse engineering

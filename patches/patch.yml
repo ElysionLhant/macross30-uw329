@@ -1,17 +1,21 @@
 Version: 1.2
 
-# Macross 30 (BLJS10184) 32:9 ultrawide (3D only, verified)
-# 思路: 投影矩阵水平项 = m11 / aspect, aspect = (float)w / (float)h (fcfid 整数转换)
-# 把各处宽度转换 frsp fX, f13 改成 fadds fX, f13, f13 (宽度×2 → aspect 16:9 → 32:9)
-# 另: 标量构建器用的静态宽高比表 @0xad5328 由 16/9 改为 32/9
-# 配合 Video: Stretch To Display Area + 全屏使用; HUD/影片为 16:9 预渲染保持拉伸
+# Macross 30 (BLJS10184) 32:9 ultrawide (3D + HUD居中 + 菜单文字, 实机验证)
+# 3D: 投影矩阵水平项 = m11 / aspect, aspect = (float)w / (float)h (fcfid 整数转换)
+#     各处宽度转换 frsp fX, f13 改 fadds fX, f13, f13 (宽度×2 → aspect 16:9 → 32:9)
+#     标量构建器静态宽高比表 @0xad5328 由 16/9 改为 32/9
+# HUD: 全部 f32 四边形写出函数(36 个)逐角点改 ndc_x = px/(2A)-0.5 → UI 收中央 16:9 区
+#      (7 个全屏特效 quad+UV 变体保持原始不打补丁, 避免特效被压成中央黑带)
+# 文字: 0x1a1244/0x1a1a54 同公式; 批量环把 UV v 除数 texH 从 f12 挪到 f13 保住 f12=K=0.5
+# 配合 Video: Stretch To Display Area + 全屏使用; 影片为 16:9 预渲染保持拉伸
+# 已知残留: 冲刺运动模糊在压区/非压区边界有一条分割线 (0x822 dummy-quad 模糊链, 不经上述写出函数)
 PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
   "32:9 Ultrawide (7680x2160)":
     Games:
       "Macross 30":
         "BLJS10184": [ All ]
     Author: Kimi
-    Notes: "32:9 aspect for Macross 30. Use with Stretch To Display Area + fullscreen. 3D widened; HUD/movies stay 16:9."
+    Notes: "32:9 for Macross 30. Stretch To Display Area + fullscreen. 3D widened; HUD/text centered; movies stay 16:9. Minor seam on boost blur."
     Patch Version: 1.0
     Patch:
       # A site (caller5 调用者 A): frsp f2, f13 -> fadds f2, f13, f13
@@ -33,4 +37,241 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x008df288, 0x3a4ccccd ]
       - [ be32, 0x008df4c0, 0x3a4ccccd ]
       - [ be32, 0x008dfa18, 0x3a4ccccd ]
+      # UW 居中补丁 (BAKER_FINDING 11-word, writer 0x5e5ea4, x: (px/A)*0.5-0.5 => [-.5,.5] 居中, y 不动)
+      - [ be32, 0x005e5fcc, 0xc162599c ]
+      - [ be32, 0x005e5fd0, 0xedad0024 ]
+      - [ be32, 0x005e5fe4, 0xedad5af8 ]
+      - [ be32, 0x005e6008, 0xc5b90008 ]
+      - [ be32, 0x005e601c, 0xc0190004 ]
+      - [ be32, 0x005e600c, 0xedad6024 ]
+      - [ be32, 0x005e6010, 0xedad5af8 ]
+      - [ be32, 0x005e603c, 0xedad6024 ]
+      - [ be32, 0x005e6040, 0xedad5af8 ]
+      - [ be32, 0x005e606c, 0xec006824 ]
+      - [ be32, 0x005e6070, 0xec005af8 ]
+      # ---- 全族写出函数居中补丁（35 fn, 263 words, BAKER_FINDING 附录 A） ----
+      - [ be32, 0x5e2638, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e26b8, 0xedad0024 ]  # fsubs f13, f13, f0  ->  fdivs f13, f13, f0
+      - [ be32, 0x5e26bc, 0xedad5af8 ]  # fdivs f13, f13, f0  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e2a0c, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e2a58, 0xec1f6824 ]  # fsubs f0, f31, f13  ->  fdivs f0, f31, f13
+      - [ be32, 0x5e2a6c, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e2a8c, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e2a90, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e2ab0, 0xec1b6824 ]  # fsubs f0, f27, f13  ->  fdivs f0, f27, f13
+      - [ be32, 0x5e2ab4, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e2d0c, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e2d58, 0xec1f6824 ]  # fsubs f0, f31, f13  ->  fdivs f0, f31, f13
+      - [ be32, 0x5e2d60, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e2d80, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e2d84, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e2da4, 0xec1b6824 ]  # fsubs f0, f27, f13  ->  fdivs f0, f27, f13
+      - [ be32, 0x5e2da8, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e2f64, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e2fb0, 0xec1f6824 ]  # fsubs f0, f31, f13  ->  fdivs f0, f31, f13
+      - [ be32, 0x5e2fcc, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e2fec, 0xec1f6824 ]  # fsubs f0, f31, f13  ->  fdivs f0, f31, f13
+      - [ be32, 0x5e2ff0, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e3010, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e3014, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e3034, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e3038, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5e3298, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e32e4, 0xec1f6824 ]  # fsubs f0, f31, f13  ->  fdivs f0, f31, f13
+      - [ be32, 0x5e32ec, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e330c, 0xec1f6824 ]  # fsubs f0, f31, f13  ->  fdivs f0, f31, f13
+      - [ be32, 0x5e3310, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e3330, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e3334, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e3354, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e3358, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e3528, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e357c, 0xedad0024 ]  # fsubs f13, f13, f0  ->  fdivs f13, f13, f0
+      - [ be32, 0x5e3584, 0xedad5af8 ]  # fdivs f13, f13, f0  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e35ac, 0xedad6024 ]  # fsubs f13, f13, f12  ->  fdivs f13, f13, f12
+      - [ be32, 0x5e35b0, 0xedad5af8 ]  # fdivs f13, f13, f12  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e35dc, 0xedad6024 ]  # fsubs f13, f13, f12  ->  fdivs f13, f13, f12
+      - [ be32, 0x5e35e0, 0xedad5af8 ]  # fdivs f13, f13, f12  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e360c, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e3610, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e37c4, 0xc0e2599c ]  # nop  ->  lfs f7, 0x599c(r2)
+      - [ be32, 0x5e382c, 0xec094024 ]  # fsubs f0, f9, f8  ->  fdivs f0, f9, f8
+      - [ be32, 0x5e3838, 0xec0039f8 ]  # fdivs f0, f0, f8  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5e3860, 0xec0c6824 ]  # fsubs f0, f12, f13  ->  fdivs f0, f12, f13
+      - [ be32, 0x5e3864, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5e3884, 0xed8c6824 ]  # fsubs f12, f12, f13  ->  fdivs f12, f12, f13
+      - [ be32, 0x5e3888, 0xed8c39f8 ]  # fdivs f12, f12, f13  ->  fmsubs f12, f12, f7, f7
+      - [ be32, 0x5e38a8, 0xec096824 ]  # fsubs f0, f9, f13  ->  fdivs f0, f9, f13
+      - [ be32, 0x5e38ac, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5e38cc, 0xed290024 ]  # fsubs f9, f9, f0  ->  fdivs f9, f9, f0
+      - [ be32, 0x5e38d0, 0xed2939f8 ]  # fdivs f9, f9, f0  ->  fmsubs f9, f9, f7, f7
+      - [ be32, 0x5e3c48, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e3c4c, 0xec00fff8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f31, f31
+      - [ be32, 0x5e3e90, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e3e94, 0xec00fff8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f31, f31
+      - [ be32, 0x5e40d8, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e40dc, 0xec00fff8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f31, f31
+      - [ be32, 0x5e4320, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e4324, 0xec00fff8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f31, f31
+      - [ be32, 0x5e4438, 0xc122599c ]  # nop  ->  lfs f9, 0x599c(r2)
+      - [ be32, 0x5e449c, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e44a0, 0xed6b4a78 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f9, f9
+      - [ be32, 0x5e44c0, 0xed4a6824 ]  # fsubs f10, f10, f13  ->  fdivs f10, f10, f13
+      - [ be32, 0x5e44c4, 0xed4a4a78 ]  # fdivs f10, f10, f13  ->  fmsubs f10, f10, f9, f9
+      - [ be32, 0x5e476c, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e47c8, 0xedad6024 ]  # fsubs f13, f13, f12  ->  fdivs f13, f13, f12
+      - [ be32, 0x5e47cc, 0xedad5af8 ]  # fdivs f13, f13, f12  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e62d0, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e632c, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e6348, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e6368, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e636c, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e638c, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e6390, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e63b0, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e63b4, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5e6664, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e66e0, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e66e4, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e6960, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e69bc, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e69e0, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e6a00, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e6a04, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e6a24, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e6a28, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e6a48, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e6a4c, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5e6d30, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e6d8c, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e6da8, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e6dc8, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e6dcc, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e6dec, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e6df0, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e6e10, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e6e14, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5e7050, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e70ac, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e70c8, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e70e8, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e70ec, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e710c, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e7110, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e7130, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e7134, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5e7378, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e73d4, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e73f8, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e7418, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e741c, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e743c, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e7440, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e7460, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e7464, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5e7740, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e77b0, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e77b4, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e77e4, 0xedad6024 ]  # fsubs f13, f13, f12  ->  fdivs f13, f13, f12
+      - [ be32, 0x5e77e8, 0xedad5af8 ]  # fdivs f13, f13, f12  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e7818, 0xedad6024 ]  # fsubs f13, f13, f12  ->  fdivs f13, f13, f12
+      - [ be32, 0x5e781c, 0xedad5af8 ]  # fdivs f13, f13, f12  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e784c, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e7850, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e7a90, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e7af4, 0xedad0024 ]  # fsubs f13, f13, f0  ->  fdivs f13, f13, f0
+      - [ be32, 0x5e7b08, 0xedad5af8 ]  # fdivs f13, f13, f0  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e7b30, 0xedad6024 ]  # fsubs f13, f13, f12  ->  fdivs f13, f13, f12
+      - [ be32, 0x5e7b34, 0xedad5af8 ]  # fdivs f13, f13, f12  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e7b60, 0xedad6024 ]  # fsubs f13, f13, f12  ->  fdivs f13, f13, f12
+      - [ be32, 0x5e7b64, 0xedad5af8 ]  # fdivs f13, f13, f12  ->  fmsubs f13, f13, f11, f11
+      - [ be32, 0x5e7b90, 0xec006824 ]  # fsubs f0, f0, f13  ->  fdivs f0, f0, f13
+      - [ be32, 0x5e7b94, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e7dec, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e7e48, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e7e5c, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e7e7c, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e7e80, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e7ea0, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e7ea4, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e7ec4, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e7ec8, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e8c2c, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e8c88, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e8ca4, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e8cc4, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e8cc8, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e8ce8, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e8cec, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e8d0c, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e8d10, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5e960c, 0xc162599c ]  # nop  ->  lfs f11, 0x599c(r2)
+      - [ be32, 0x5e9668, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e9688, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e96a8, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e96ac, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e96cc, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e96d0, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e96f0, 0xec1d6824 ]  # fsubs f0, f29, f13  ->  fdivs f0, f29, f13
+      - [ be32, 0x5e96f4, 0xec005af8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f11, f11
+      - [ be32, 0x5e9b40, 0xc142599c ]  # nop  ->  lfs f10, 0x599c(r2)
+      - [ be32, 0x5e9b9c, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e9bb8, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e9bd8, 0xec0b6824 ]  # fsubs f0, f11, f13  ->  fdivs f0, f11, f13
+      - [ be32, 0x5e9bdc, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e9bfc, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5e9c00, 0xec0052b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f10, f10
+      - [ be32, 0x5e9c20, 0xed6b6824 ]  # fsubs f11, f11, f13  ->  fdivs f11, f11, f13
+      - [ be32, 0x5e9c24, 0xed6b52b8 ]  # fdivs f11, f11, f13  ->  fmsubs f11, f11, f10, f10
+      - [ be32, 0x5ea100, 0xc0e2599c ]  # nop  ->  lfs f7, 0x599c(r2)
+      - [ be32, 0x5ea14c, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5ea174, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5ea194, 0xec096824 ]  # fsubs f0, f9, f13  ->  fdivs f0, f9, f13
+      - [ be32, 0x5ea198, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5ea1b8, 0xec1e6824 ]  # fsubs f0, f30, f13  ->  fdivs f0, f30, f13
+      - [ be32, 0x5ea1bc, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5ea1dc, 0xed296824 ]  # fsubs f9, f9, f13  ->  fdivs f9, f9, f13
+      - [ be32, 0x5ea1e0, 0xed2939f8 ]  # fdivs f9, f9, f13  ->  fmsubs f9, f9, f7, f7
+      - [ be32, 0x5ea66c, 0xc0c2599c ]  # nop  ->  lfs f6, 0x599c(r2)
+      - [ be32, 0x5ea6b0, 0xec194024 ]  # fsubs f0, f25, f8  ->  fdivs f0, f25, f8
+      - [ be32, 0x5ea6ec, 0xec0031b8 ]  # fdivs f0, f0, f8  ->  fmsubs f0, f0, f6, f6
+      - [ be32, 0x5ea748, 0xec096824 ]  # fsubs f0, f9, f13  ->  fdivs f0, f9, f13
+      - [ be32, 0x5ea74c, 0xec0031b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f6, f6
+      - [ be32, 0x5ea76c, 0xec196824 ]  # fsubs f0, f25, f13  ->  fdivs f0, f25, f13
+      - [ be32, 0x5ea770, 0xec0031b8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f6, f6
+      - [ be32, 0x5ea790, 0xed296824 ]  # fsubs f9, f9, f13  ->  fdivs f9, f9, f13
+      - [ be32, 0x5ea794, 0xed2931b8 ]  # fdivs f9, f9, f13  ->  fmsubs f9, f9, f6, f6
+      - [ be32, 0x5ead2c, 0xc0e2599c ]  # nop  ->  lfs f7, 0x599c(r2)
+      - [ be32, 0x5ead90, 0xec1c6824 ]  # fsubs f0, f28, f13  ->  fdivs f0, f28, f13
+      - [ be32, 0x5eadf0, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5eae10, 0xec0a6824 ]  # fsubs f0, f10, f13  ->  fdivs f0, f10, f13
+      - [ be32, 0x5eae14, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5eae34, 0xec1c6824 ]  # fsubs f0, f28, f13  ->  fdivs f0, f28, f13
+      - [ be32, 0x5eae38, 0xec0039f8 ]  # fdivs f0, f0, f13  ->  fmsubs f0, f0, f7, f7
+      - [ be32, 0x5eae58, 0xed4a6824 ]  # fsubs f10, f10, f13  ->  fdivs f10, f10, f13
+      - [ be32, 0x5eae5c, 0xed4a39f8 ]  # fdivs f10, f10, f13  ->  fmsubs f10, f10, f7, f7
       # 分类器强制 720p: 0x55a0dc lwz r0,0x18(r3) -> li r0,0x500 ; 0x55a154 lwz r0,0x1c(r3) -> li r0,0x2d0
+      # ---- 菜单文字烘焙器补丁 v2（0x1a1244 单精灵 8 词 + 0x1a1a54 批量环 11 词）----
+      # 公式同 35 族: fsubs(px-A)->fdivs(px/A); fdivs(/A)->fmsubs(f,f,f12,f12), 合成 px/(2A)-0.5
+      # f12 = K = 0.5（lfs @-0x2fc(r2)，调用链纯整数无 FP 写，跨 bl 存活）
+      # 0x1a1a54 环内 f12 原被 frsp f12,f7 撞碎（UV v 除数 texH）->
+      #   frsp 改写 f13 + 两条 UV v 除法改吃 f13，f12 全程保 K；f13 本来就是每角点 lfs 重载的 scratch
+      - [ be32, 0x1a13d4, 0xedadf824 ]  # fsubs f13,f13,f31 -> fdivs f13,f13,f31
+      - [ be32, 0x1a13f4, 0xedad6338 ]  # fdivs f13,f13,f31 -> fmsubs f13,f13,f12,f12
+      - [ be32, 0x1a141c, 0xedadf824 ]
+      - [ be32, 0x1a1420, 0xedad6338 ]
+      - [ be32, 0x1a1440, 0xedadf824 ]
+      - [ be32, 0x1a1444, 0xedad6338 ]
+      - [ be32, 0x1a1474, 0xedadf824 ]
+      - [ be32, 0x1a1478, 0xedad6338 ]
+      - [ be32, 0x1a1bc4, 0xedadf824 ]
+      - [ be32, 0x1a1bf4, 0xedad6338 ]
+      - [ be32, 0x1a1c44, 0xedadf824 ]
+      - [ be32, 0x1a1c48, 0xedad6338 ]
+      - [ be32, 0x1a1c70, 0xedadf824 ]
+      - [ be32, 0x1a1c74, 0xedad6338 ]
+      - [ be32, 0x1a1c9c, 0xedadf824 ]
+      - [ be32, 0x1a1ca0, 0xedad6338 ]
+      - [ be32, 0x1a1c0c, 0xfda03818 ]  # frsp f12,f7 -> frsp f13,f7（texH 挪窝，保 f12=K）
+      - [ be32, 0x1a1c1c, 0xed4a6824 ]  # fdivs f10,f10,f12 -> fdivs f10,f10,f13
+      - [ be32, 0x1a1c20, 0xed086824 ]  # fdivs f8,f8,f12  -> fdivs f8,f8,f13
