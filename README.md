@@ -123,22 +123,18 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 
 **Do NOT**: re-patch the 7 quad+UV variants (trades the seam for the black band); strip more `0x5exxxx` functions (each one takes a chunk of UI with it).
 
-## The Next Path II (comm-portrait squash) — starting point, written down
+## The Next Path II (comm-portrait squash) — FIXED, pending final sign-off
 
-**Symptom**: in story/comm scenes, the on-monitor character portraits render at half horizontal width. Everything else is correct.
+**Symptom (resolved)**: in story/comm scenes, the on-monitor character portraits rendered at half horizontal width.
 
-**Established (5-round bisect, verified on hardware)**:
+**Root cause (5-round bisect, verified on hardware)**: the portraits are drawn by writer **`0x5e5ea4`** in **framebuffer pixel space** (quad coords come from the 3D projection of the in-world monitors), while the same writer draws LAYO-space nine-patch dialog quads that need centering. A genuine mixed painter — centering it squashed portraits, exempting it stretched dialog frames.
 
-- The portraits are drawn by writer **`0x5e5ea4`** in **framebuffer pixel space** — their quad coordinates come from the 3D projection of the in-world monitors, already correct at 32:9 with the original `(px−A)/A` formula
-- The same writer also draws LAYO-space nine-patch dialog quads (callers `0x4c210` / `0x4c9ec` / `0x4ca60`) that DO need centering; the portrait path arrives via a different call site (`0x79674` element assembly, per appendix A)
-- So: centering `0x5e5ea4` squashes portraits (current shipped state); exempting it stretches dialog frames. A genuine mixed painter
+**Fix (implemented)**: make the writer's seed factor **fS switch per call** — the patched corner math `(px/A)·fS − fS` equals the centered formula at fS=0.5 and the original formula at fS=1.0, so one writer serves both quad families. The discriminator is the quad's right edge **x1 > 1280** (framebuffer-space quads exceed the LAYO canvas). 10 extra patch words:
 
-**Routes**:
+- the `0x7009c4` trampoline's final branch now lands on a 7-word gate routine in the **section-tail loader padding** (`0xa6ad4c`): integer bit-mask compares `x1` raw bits against `0x44A00000` (1280.0) and yields `0x3F80`/`0x3F00` (1.0/0.5) in r12 — all four `0x5e5ea4` call sites funnel through it
+- the writer's free nop at `0x5e5f08` stores r12 to `writer_frame+0x88`; the seed slot at `0x5e5fcc` loads it (`lfs f11, 0x88(r1)`). r12 is clobber-safe: the only call in between (`0x5bba04`) touches r3 only
 
-1. **Per-caller routing (preferred)**: retarget the portrait-path call site (`bl` at `0x79674` area) from the `0x5e5ea4` trampoline (`0x7009c4`) to an **unpatched sibling writer** with an identical ABI — dialogs stay centered, portraits render at projection-correct aspect. Needs: confirm which call site feeds portraits, pick a signature-identical sibling among the 35, verify its TOC trampoline.
-2. **Emulator-side gating**: same build2 runtime hook as Next Path I, distinguishing framebuffer-space quads (span >1280 design px) from LAYO quads.
-
-**Do NOT**: exempt `0x5e5ea4` outright (dialog frames revert to stretched); try to "pre-scale" the portrait data (the offset can't be expressed in the 2-instruction budget).
+Edge rule: `x1` exactly 1280.0 counts as LAYO (strict `>`), negative coords fall back to centered. Verified stable end-to-end (boot/movie/menus/mission load); dialog frames and unit labels unchanged; **final visual sign-off on a comm scene (faces + frames simultaneously) is the only open item.**
 
 ---
 

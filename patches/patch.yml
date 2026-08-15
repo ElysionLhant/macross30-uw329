@@ -1,21 +1,17 @@
 Version: 1.2
 
-# Macross 30 (BLJS10184) 32:9 ultrawide (3D + HUD居中 + 菜单文字, 实机验证)
-# 3D: 投影矩阵水平项 = m11 / aspect, aspect = (float)w / (float)h (fcfid 整数转换)
-#     各处宽度转换 frsp fX, f13 改 fadds fX, f13, f13 (宽度×2 → aspect 16:9 → 32:9)
-#     标量构建器静态宽高比表 @0xad5328 由 16/9 改为 32/9
-# HUD: 全部 f32 四边形写出函数(36 个)逐角点改 ndc_x = px/(2A)-0.5 → UI 收中央 16:9 区
-#      (7 个全屏特效 quad+UV 变体保持原始不打补丁, 避免特效被压成中央黑带)
-# 文字: 0x1a1244/0x1a1a54 同公式; 批量环把 UV v 除数 texH 从 f12 挪到 f13 保住 f12=K=0.5
-# 配合 Video: Stretch To Display Area + 全屏使用; 影片为 16:9 预渲染保持拉伸
-# 已知残留: 冲刺运动模糊在压区/非压区边界有一条分割线 (0x822 dummy-quad 模糊链, 不经上述写出函数)
+# Macross 30 (BLJS10184) 32:9 ultrawide (3D only, verified)
+# 思路: 投影矩阵水平项 = m11 / aspect, aspect = (float)w / (float)h (fcfid 整数转换)
+# 把各处宽度转换 frsp fX, f13 改成 fadds fX, f13, f13 (宽度×2 → aspect 16:9 → 32:9)
+# 另: 标量构建器用的静态宽高比表 @0xad5328 由 16/9 改为 32/9
+# 配合 Video: Stretch To Display Area + 全屏使用; HUD/影片为 16:9 预渲染保持拉伸
 PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
   "32:9 Ultrawide (7680x2160)":
     Games:
       "Macross 30":
         "BLJS10184": [ All ]
     Author: "ElysionLhant & Kimi"
-    Notes: "32:9 for Macross 30. Stretch To Display Area + fullscreen. 3D widened; HUD/text centered; movies stay 16:9. Minor seam on boost blur."
+    Notes: "32:9 aspect for Macross 30. Use with Stretch To Display Area + fullscreen. 3D widened; HUD/movies stay 16:9."
     Patch Version: 1.0
     Patch:
       # A site (caller5 调用者 A): frsp f2, f13 -> fadds f2, f13, f13
@@ -38,7 +34,7 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x008df4c0, 0x3a4ccccd ]
       - [ be32, 0x008dfa18, 0x3a4ccccd ]
       # UW 居中补丁 (BAKER_FINDING 11-word, writer 0x5e5ea4, x: (px/A)*0.5-0.5 => [-.5,.5] 居中, y 不动)
-      - [ be32, 0x005e5fcc, 0xc162599c ]
+      - [ be32, 0x005e5fcc, 0xc1610088 ]
       - [ be32, 0x005e5fd0, 0xedad0024 ]
       - [ be32, 0x005e5fe4, 0xedad5af8 ]
       - [ be32, 0x005e6008, 0xc5b90008 ]
@@ -275,3 +271,16 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x1a1c0c, 0xfda03818 ]  # frsp f12,f7 -> frsp f13,f7（texH 挪窝，保 f12=K）
       - [ be32, 0x1a1c1c, 0xed4a6824 ]  # fdivs f10,f10,f12 -> fdivs f10,f10,f13
       - [ be32, 0x1a1c20, 0xed086824 ]  # fdivs f8,f8,f12  -> fdivs f8,f8,f13
+      # ---- 0x5e5ea4 混画门控（头像/对话框两全, 10 词）----
+      # 角点公式 (px/A)*fS-fS: fS=0.5 居中(LAYO), fS=1.0 原式(帧缓冲 quad)
+      # 跳板 0x7009d0 改道段尾洞例程: 整数位掩码判 x1>1280 -> r12=0x3F80/0x3F00
+      # 写出器 0x5e5f08(nop) 把 r12 落 writer_frame+0x88; 种子槽 0x5e5fcc 改从 0x88(r1) 读
+      - [ be32, 0xa6ad4c, 0x81640008 ]  # lwz r11, 8(r4)      ; x1 raw
+      - [ be32, 0xa6ad50, 0x3d8044a0 ]  # lis r12, 0x44A0     ; 1280.0 raw
+      - [ be32, 0xa6ad54, 0x7d8b6050 ]  # subf r12, r11, r12  ; 1280raw - x1raw
+      - [ be32, 0xa6ad58, 0x7d8cfe70 ]  # srawi r12, r12, 31
+      - [ be32, 0xa6ad5c, 0x718c0080 ]  # andi. r12, r12, 0x80
+      - [ be32, 0xa6ad60, 0x618c3f00 ]  # ori r12, r12, 0x3F00 ; -> 1.0/0.5 bits
+      - [ be32, 0xa6ad64, 0x4bb7b140 ]  # b 0x5e5ea4
+      - [ be32, 0x7009d0, 0x4836a37c ]  # tramp: b 0x5e5ea4 -> b 0xa6ad4c
+      - [ be32, 0x5e5f08, 0x91810088 ]  # nop -> stw r12, 0x88(r1)
