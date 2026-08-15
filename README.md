@@ -20,8 +20,14 @@ A 32:9 (7680×2160) ultrawide patch for **Macross 30: Ginga o Tsunagu Utagoe (BL
 
 ## Troubleshooting
 
-- **"Dead FIFO commands queue state has been detected!" mid-game**: an RSX↔PPU command-stream race (a known RPCS3 issue class — the FIFO walker consumed a `call` whose target the PPU had not finished writing). Not caused by this patch. The bundled per-game config sets **Driver Wake-Up Delay: 20**; if it still occurs, raise it (e.g. 200) or set **RSX FIFO Accuracy: Atomic** in Advanced settings (costs some performance).
-- **Fatal Error dialog on exit (in `ZCULL_control`)**: a harmless teardown race in this RPCS3 build — all CPU threads and saves are already done when it happens. Our build2 source tree carries an SEH guard for it (`rpcs3/Emu/RSX/RSXZCULL.cpp`); on a stock 0.0.32-16803 the dialog may still appear on exit — safe to dismiss.
+- **"Dead FIFO commands queue state has been detected!" mid-game**: an RSX↔PPU command-stream race (a known RPCS3 issue class — the FIFO walker consumed a `call` whose target the PPU had not finished writing). Not caused by this patch. Mitigation ladder in Advanced settings: **Driver Wake-Up Delay 20 → 200µs**, then **RSX FIFO Accuracy: Atomic** (costs some performance). Observed twice, both ~25 min into combat-heavy play.
+- **Fatal Error dialog on exit (in `ZCULL_control`)**: a harmless teardown race in this RPCS3 build — all CPU threads and saves are already done when it happens. Our build2 source tree carries an SEH guard for it (`rpcs3/Emu/RSX/RSXZCULL.cpp`, verified in production: two corrupted blocks skipped with a log line instead of a crash dialog); on a stock 0.0.32-16803 the dialog may still appear on exit — safe to dismiss.
+- **"Game data is corrupted" at boot / `exception: vector<T> too long` self-abort (esp. entering the hangar)**: **not an emulator or patch issue** — stale experimental pack files (`data.dat`/`data2.dat`/`shaders.dat` variants produced by this repo's pack tools) sitting in the `dev_hdd0/game/BLJS10184_INSTALL/USRDIR/data/pack/` override directory. The game loads that directory with priority over the disc, and one experimental table made the hangar menu constructor overflow a `std::vector`; removing the override makes the integrity check fail instead. Fix: quarantine the whole `BLJS10184_INSTALL` directory (the game reinstalls pristine data from the disc). **If you never used the pack tools, this cannot happen to you.**
+
+## Known issues
+
+- **Comm-scene portraits horizontally squashed (×0.5)**: the monitor/dialog portraits are drawn by writer `0x5e5ea4` in **framebuffer pixel space** (already 32:9-correct from the 3D projection), but the same writer also draws LAYO-space nine-patch dialog quads that need the centering formula — a mixed painter. Centering it squashes the portraits; exempting it stretches the dialog frames. Proper fix = per-caller routing (route the portrait caller to an unpatched sibling writer) or emulator-side gating — see "The Next Path". Cosmetic only.
+- **Boost motion-blur seam** — see "The Next Path" below.
 
 ---
 
@@ -116,6 +122,23 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 2. **(Recon) Locate the 0x822 baker**: use the build2 logging method at the end of appendix C — on 0x822 draws with tex==`0x027b0000`, record the CPU PC that writes the slot12 table. One measured run settles it. Then either exempt that writer specifically, or confirm it should stay fullscreen and close the case.
 
 **Do NOT**: re-patch the 7 quad+UV variants (trades the seam for the black band); strip more `0x5exxxx` functions (each one takes a chunk of UI with it).
+
+## The Next Path II (comm-portrait squash) — starting point, written down
+
+**Symptom**: in story/comm scenes, the on-monitor character portraits render at half horizontal width. Everything else is correct.
+
+**Established (5-round bisect, verified on hardware)**:
+
+- The portraits are drawn by writer **`0x5e5ea4`** in **framebuffer pixel space** — their quad coordinates come from the 3D projection of the in-world monitors, already correct at 32:9 with the original `(px−A)/A` formula
+- The same writer also draws LAYO-space nine-patch dialog quads (callers `0x4c210` / `0x4c9ec` / `0x4ca60`) that DO need centering; the portrait path arrives via a different call site (`0x79674` element assembly, per appendix A)
+- So: centering `0x5e5ea4` squashes portraits (current shipped state); exempting it stretches dialog frames. A genuine mixed painter
+
+**Routes**:
+
+1. **Per-caller routing (preferred)**: retarget the portrait-path call site (`bl` at `0x79674` area) from the `0x5e5ea4` trampoline (`0x7009c4`) to an **unpatched sibling writer** with an identical ABI — dialogs stay centered, portraits render at projection-correct aspect. Needs: confirm which call site feeds portraits, pick a signature-identical sibling among the 35, verify its TOC trampoline.
+2. **Emulator-side gating**: same build2 runtime hook as Next Path I, distinguishing framebuffer-space quads (span >1280 design px) from LAYO quads.
+
+**Do NOT**: exempt `0x5e5ea4` outright (dialog frames revert to stretched); try to "pre-scale" the portrait data (the offset can't be expressed in the 2-instruction budget).
 
 ---
 

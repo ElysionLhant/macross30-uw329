@@ -40,10 +40,12 @@
 - 静态补丁最小粒度 = 整个函数（每角点 2 指令位，无 code cave）；混画函数只能取舍或上模拟器侧门控。
 - 工作仓 `UW32_Macross30`（本地，含 117MB 内存 dump 与抓包）未公开；分析脚本与文档已全部并入分发仓。
 
-## 两个已处理的崩溃（2026-08-15，别重复查）
+## 已处理的崩溃/事故（别重复查）
 
-- **主局：RSX Dead FIFO**——玩 25 分钟游戏骤停的真凶。FIFO 里出现 `call 0x0`：RSX 消费者读到了 PPU 还没写完的命令（rpcs3 已知竞态类，非本补丁引起）。缓解：每游戏配置 `Driver Wake-Up Delay: 20`（全局曾被压到 1）；复发再加到 200 或 `RSX FIFO Accuracy: Atomic`。
-- **次局：退出时 ZCULL_control 析构崩（host AV @base+0x7438f0）**——关机路径遍历已损坏的 MMIO 锁定页表（`RSXZCULL.cpp:23`），上游 master 代码相同（未修）。已在 build2 源码加 SEH 守卫（`unlock_pages_guarded`），崩窗变一行日志；客体早已停止，零实际影响。重编方法：VS2022 自带 cmake（不在 PATH）`--build build2 --config Release --target rpcs3`。
+- **主局：RSX Dead FIFO**——FIFO 里出现 `call 0x0`：RSX 消费者读到了 PPU 还没写完的命令（rpcs3 已知竞态类，非本补丁引起）。两次发作均在激战 ~25 分钟处。缓解阶梯：每游戏配置 `Driver Wake-Up Delay` 20→**200µs**（20 已证不够）→ `RSX FIFO Accuracy: Atomic`。
+- **次局：退出时 ZCULL_control 析构崩（host AV @base+0x7438f0）**——关机路径遍历已损坏的 MMIO 锁定页表（`RSXZCULL.cpp:23`），上游 master 代码相同（未修）。已在 build2 源码加 SEH 守卫（`unlock_pages_guarded`），**实机验证**：Dead FIFO 后的关机只留两行日志不再弹窗。重编方法：VS2022 自带 cmake（不在 PATH）`--build build2 --config Release --target rpcs3`。
+- **"Game data is corrupted" / "vector<T> too long" 闪退**——**周末实验包在覆盖目录插队**：`dev_hdd0/game/BLJS10184_INSTALL/USRDIR/data/pack/` 里的实验 data.dat/data2.dat/shaders.dat（文件侧路线遗物）被游戏优先加载，一张坏表让机库菜单 vector 爆炸（游戏自己 abort 并 tty 打印回栈）；摘掉实验包又触发安装完整性校验弹 corrupted。**解法：整个 BLJS10184_INSTALL 隔离改名，游戏从光盘重装原版数据**。教训：文件侧实验残留比代码补丁残留更阴险，它对所有模拟器、所有补丁状态一视同仁地生效。
+- **人脸缩半（通讯场景监视器头像）**——五轮二分定位：画家 = `0x5e5ea4`，但它同时给 LAYO 对话框（需居中）和帧缓冲空间头像（原公式即正确）打工，**混画**。居中它则脸缩半（现状），豁免它则对话框拉伸。正道 = **按调用方路由**：把头像路径的调用点（`0x79674` 区域）从 `0x5e5ea4` 跳板改指到一个未补丁的兄弟写出函数。起始点已写进 README "The Next Path II"。
 
 ## 存档点
 

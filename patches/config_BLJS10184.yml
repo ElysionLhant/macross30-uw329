@@ -10,6 +10,7 @@ Video:
   Write Color Buffers: true
   Stretch To Display Area: true
 Advanced:
-  # Dead FIFO ("call 0x0" race) mitigation; raise further (e.g. 200) or set
-  # "RSX FIFO Accuracy: Atomic" if it still occurs. See README troubleshooting.
-  Driver Wake-Up Delay: 20
+  # Dead FIFO ("call 0x0" race) mitigation; observed recurring at 20us on this
+  # game, hence 200. If it still occurs, set "RSX FIFO Accuracy: Atomic"
+  # (costs some performance). See README troubleshooting.
+  Driver Wake-Up Delay: 200
