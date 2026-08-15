@@ -129,12 +129,14 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 
 **Root cause (5-round bisect, verified on hardware)**: the portraits are drawn by writer **`0x5e5ea4`** in **framebuffer pixel space** (quad coords come from the 3D projection of the in-world monitors), while the same writer draws LAYO-space nine-patch dialog quads that need centering. A genuine mixed painter — centering it squashed portraits, exempting it stretched dialog frames.
 
-**Fix (implemented)**: make the writer's seed factor **fS switch per call** — the patched corner math `(px/A)·fS − fS` equals the centered formula at fS=0.5 and the original formula at fS=1.0, so one writer serves both quad families. The discriminator is the quad's right edge **x1 > 1280** (framebuffer-space quads exceed the LAYO canvas). 10 extra patch words:
+**Fix (implemented)**: make the writer's seed factor **fS switch per call** — the patched corner math `(px/A)·fS − fS` equals the centered formula at fS=0.5 and the original formula at fS=1.0, so one writer serves both quad families. The discriminator is the **caller's return address** (coords alone can't separate the two families — dialog frames are framebuffer-space too): LR low16 == `0x9678` selects the portrait path (`0x79674` assembly). 10 extra patch words:
 
-- the `0x7009c4` trampoline's final branch now lands on a 7-word gate routine in the **section-tail loader padding** (`0xa6ad4c`): integer bit-mask compares `x1` raw bits against `0x44A00000` (1280.0) and yields `0x3F80`/`0x3F00` (1.0/0.5) in r12 — all four `0x5e5ea4` call sites funnel through it
+- the `0x7009c4` trampoline's final branch now lands on an 8-word gate routine at `0x8defd4` (a zero-fill gap verified unreferenced): `mflr` → compare → `cntlzw` → shift/mask, yielding `0x3F80`/`0x3F00` (1.0/0.5) in r12
 - the writer's free nop at `0x5e5f08` stores r12 to `writer_frame+0x88`; the seed slot at `0x5e5fcc` loads it (`lfs f11, 0x88(r1)`). r12 is clobber-safe: the only call in between (`0x5bba04`) touches r3 only
 
-Edge rule: `x1` exactly 1280.0 counts as LAYO (strict `>`), negative coords fall back to centered. Verified stable end-to-end (boot/movie/menus/mission load); dialog frames and unit labels unchanged; **final visual sign-off on a comm scene (faces + frames simultaneously) is the only open item.**
+Edge rule: LR compare is exact — dialog sites (`0x4c214`/`0x4c9f0`/`0x4ca64`) all take fS=0.5. Verified on hardware: Load Save frames, unit labels, item menus all correct; **final visual sign-off on a comm scene (faces + frames simultaneously) is the only open item.**
+
+**Hard-won gotcha**: an earlier revision of the gate forgot the `srwi` after `cntlzw` — `cntlzw` yields 32 on equality but 17–20 on inequality, so dialogs got fS≈0.77–0.81 instead of 0.5 and every menu frame silently moved off-screen. `cntlzw` alone is never a boolean.
 
 ---
 

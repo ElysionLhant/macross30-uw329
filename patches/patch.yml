@@ -273,14 +273,15 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x1a1c20, 0xed086824 ]  # fdivs f8,f8,f12  -> fdivs f8,f8,f13
       # ---- 0x5e5ea4 混画门控（头像/对话框两全, 10 词）----
       # 角点公式 (px/A)*fS-fS: fS=0.5 居中(LAYO), fS=1.0 原式(帧缓冲 quad)
-      # 跳板 0x7009d0 改道段尾洞例程: 整数位掩码判 x1>1280 -> r12=0x3F80/0x3F00
+      # 跳板 0x7009d0 改道 0x8defd4 洞例程(无引用零填充区): LR 判别 (0x79678=头像路径 -> fS=1.0, 其余 fS=0.5)
       # 写出器 0x5e5f08(nop) 把 r12 落 writer_frame+0x88; 种子槽 0x5e5fcc 改从 0x88(r1) 读
-      - [ be32, 0xa6ad4c, 0x81640008 ]  # lwz r11, 8(r4)      ; x1 raw
-      - [ be32, 0xa6ad50, 0x3d8044a0 ]  # lis r12, 0x44A0     ; 1280.0 raw
-      - [ be32, 0xa6ad54, 0x7d8b6050 ]  # subf r12, r11, r12  ; 1280raw - x1raw
-      - [ be32, 0xa6ad58, 0x7d8cfe70 ]  # srawi r12, r12, 31
-      - [ be32, 0xa6ad5c, 0x718c0080 ]  # andi. r12, r12, 0x80
-      - [ be32, 0xa6ad60, 0x618c3f00 ]  # ori r12, r12, 0x3F00 ; -> 1.0/0.5 bits
-      - [ be32, 0xa6ad64, 0x4bb7b140 ]  # b 0x5e5ea4
-      - [ be32, 0x7009d0, 0x4836a37c ]  # tramp: b 0x5e5ea4 -> b 0xa6ad4c
+      - [ be32, 0x8defd4, 0x7d6802a6 ]  # mflr r11            ; LR = 调用方返回地址
+      - [ be32, 0x8defd8, 0x556c043e ]  # clrlwi r12, r11, 16 ; 取低16位
+      - [ be32, 0x8defdc, 0x398c6988 ]  # addi r12, r12, -0x9678 ; == 0x79678(头像路径) 则为 0
+      - [ be32, 0x8defe0, 0x7d8c0034 ]  # cntlzw r12, r12     ; 相等 -> 32
+      - [ be32, 0x8defe4, 0x558cd93e ]  # srwi r12, r12, 5    ; 32>>5 = 1, 其它 -> 0
+      - [ be32, 0x8defe8, 0x558c3830 ]  # slwi r12, r12, 7    ; 1<<7 = 0x80
+      - [ be32, 0x8defec, 0x398c3f00 ]  # addi r12, r12, 0x3F00 ; -> 1.0(头像)/0.5(底座) bits
+      - [ be32, 0x8deff0, 0x4bd06eb4 ]  # b 0x5e5ea4
+      - [ be32, 0x7009d0, 0x481de604 ]  # tramp: b 0x5e5ea4 -> b 0x8defd4
       - [ be32, 0x5e5f08, 0x91810088 ]  # nop -> stw r12, 0x88(r1)
