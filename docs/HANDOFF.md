@@ -405,3 +405,14 @@
 - **v4 门控**（已入正式补丁）：9 词洞 @0x9e2f8c，区间判定 `(lr16^0x8000)−0x4214<0x864` 选中三站点给 fS=1.0，其余 0.5；通道照旧（0x5e5f08 stw → 0x5e5fcc lfs）。实机：商店看板娘比例✓、任务通讯头像比例✓、嘴型/表情动画恢复✓（v4-alpha 只罩 0x4c214 时表情格错位缺失，扩罩 0x4c9f0 后齐活）。
 - **血泪新章**：① git 里 v1/v3 门控词表构造的是 `0x3F80`（float 高 16 位忘了左移，fS≈0 而非 1.0/0.5）——**手搓 float 位先仿真再上机**（本轮所有词表 Python 仿真 + capstone 双向核验）；② 仿真器里 PPC `b` 指令的 LI 字段是 24 位带符号（后跳要符号扩展，我漏了，虚惊一场）；③ rlwinm 旋转位算错一位（23 vs 24）仿真当场抓住。
 - **回滚档**：build2 `patches/patch.yml.pre-v4.bak`（无门控全补丁）。日志洞调试块存 `tools/uw_logger_patch.yml`（勿当日用）。
+
+### DLSS 5 注入实验 + 分辨率拉伸 + 配置模式修正（2026-09-10 深夜）
+- **DLSS 5 全链落地 RPCS3（Vulkan）**：ReShade 6.8 全局 Vulkan 层 → LumeniteFX（光流 MV）→ DLSS5-Feeder v0.15.1（伪造 DLAA 契约，私有 D3D12 设备跑真 evaluate）→ renodx-dlss5 4.70 消费者（feature 18 神经渲染）。帧率零损耗（游戏原生 30fps 锁）。
+- **驱动钉死 616.56**：renodx 4.7 在 616.64+ 系全灭（Feeder 兼容表实测）；NV App 只会给最新版，别用；关它的驱动自动更新。
+- **启动方式坑**：bash 直启 EBOOT.BIN 会让 OP 影片 openStream 失败（0x8001xxxx）；桌面快捷方式启动正常（OP 需按 Start 跳）。
+- **红闪根因 = 开机阶段 NR 幻觉**：进游戏前 NR 默认关（NeuralUplift=0 或 F6 切换），进游戏再开。
+- **深度缓冲要手选**：游戏几十层 720p 图层合成，ReShade 自动抓到空层。Generic Depth 手动选 1280×720 中顶点数最多那个（主 3D 场景 Z-buffer，~29 万顶点）。深度探针在 dlss5-feed.log 里自证。
+- **配置模式血泪**：RPCS3 没有 "Advanced" 节名（那是 GUI 标签页）——`Driver Wake-Up Delay` 属 `Video:` 节；`VFS:` 里的路径键永远被校验器误报为废弃（弹窗勾 "Don't show again"，**永远别点 Yes**，它会把 /dev_bdvd/ 映射当废弃键删掉）。Dead FIFO 实控 = `RSX FIFO Accuracy: Atomic`（Core 节），200µs 延迟此前从未生效。
+- **Resolution Scale 实测**：200% 甲板场景干净；300% 甲板场景也干净（用户曾见条纹切片=100%→300% 过渡启动的瞬时态，稳定重启后不复现）；Force CPU Blit 毙（3D 全崩黑屏）。定稿 = **300% + Output Scaling=FSR + RCAS 65% + AF16**，DLSS 链叠加在后。
+- **DLSS SR 超分在此游戏结构性无解**：Feeder 超分旋钮全是 D3D11 专用；喂给链的永远是已拉伸的 720p 帧。真细节来源 = RPCS3 内部分辨率拉伸。
+- **无人值守测试链**：night_matrix.sh（改配置→快捷方式启动→Return 跳 OP→导航→ReShade 反斜杠截图）；postkey_uw.ps1 加了 F5/F6/Backslash。工具在 DLSS5-Macross30/。

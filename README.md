@@ -7,6 +7,7 @@ A 32:9 (7680×2160) ultrawide patch for **Macross 30: Ginga o Tsunagu Utagoe (BL
 - 3D projection renders native 32:9 (main camera matrix m00 halved, 0.974→0.487)
 - HUD, menus and text are natively centered to the middle 16:9 region (CPU baker patches, not stretching)
 - Comm-scene monitor portraits (and their mouth/expression animation cells) render full-width and correctly proportioned — an LR-class gate in the shared writer (`0x5e5ea4`) — see "(SOLVED) The Next Path II"
+- Compatible with RPCS3 **Resolution Scale 200–300%** (real internal detail, verified on hardware; Force CPU Blit stays off — it breaks this game outright)
 - Movies stay stretched 16:9 (pre-rendered 16:9 sources — nothing can be done)
 - Known leftover: a vertical seam line on the boost motion blur — see "The Next Path" below
 

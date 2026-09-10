@@ -1,26 +1,29 @@
-# Macross 30 × RPCS3 32:9 项目 — 冷启动 Handoff（2026-08-15 深夜）
+# Macross 30 × RPCS3 32:9 项目 — 冷启动 Handoff（2026-09-11 凌晨版）
 
 > 给全新会话/未来的自己：读完这一份即可上手。编年日志在 `docs/HANDOFF.md`，烘焙器考据在 `docs/BAKER_FINDING.md`，事故编年在 `docs/FINAL_HANDOFF.md`。
 
 ## 0. 一句话现状
 
-**3D / HUD / 文字 32:9 全部落地并实机验证，日常可玩。通讯场景头像（含嘴型/表情动画）已由 v4 LR 类门控修复（2026-08-17，见 §5）。剩余开放问题：冲刺运动模糊分割线（Next Path I）。**
+**3D / HUD / 文字 32:9 全部落地；通讯场景头像（含嘴型/表情动画）v4 门控修复（2026-08-17，见 §5）；DLSS 5 神经渲染链已接入（见 §5b）；画质定稿 = 300% 内部分辨率 + FSR 输出缩放 + RCAS 65% + AF16。剩余开放问题：冲刺运动模糊分割线（Next Path I）。**
 
 ## 1. 环境速查（2026-08-15 版）
 
 - 机器：9800X3D / RTX 5090 / Win11 / 7680×2160（32:9）屏
 - 游戏（勿删）：`桌面\MACROSS\BLJS10184-[日版-超时空要塞30 连接银河的歌声-射击类]\`
-- **日常模拟器 = `桌面\rpcs3-src\build2\bin\rpcs3.exe`**（定制版：0.0.32-16803 + EPERM 竞态补丁 + UW hooks + **ZCULL 关机守卫**）。桌面有 `Macross 30 (32x9).lnk` 快速启动器（图标 = 游戏 ICON0 转 ico，存于 `UW32_Macross30\assets\`）
+- **日常模拟器 = `桌面\rpcs3-src\build2\bin\rpcs3.exe`**（定制版：0.0.32-16803 + EPERM 竞态补丁 + UW hooks + **ZCULL 关机守卫**）。**启动走桌面 `Macross 30 (32x9).lnk`**（bash 直启 EBOOT.BIN 会让 OP 影片 openStream 失败）
 - 官方原版备用：`Downloads\rpcs3-v0.0.32-16803\`（存档与 build2 符号链接共享；**新版 0.0.37 放不了影片，issue #17485**）
 - 仓库：`桌面\macross30-uw329`（公开分发仓，github.com/ElysionLhant/macross30-uw329）+ `桌面\UW32_Macross30`（工作仓，含内存 dump/抓包，未公开）；`桌面\uw_venv`（pymem/capstone Python，勿动路径）
-- 补丁本体：`rpcs3-src\build2\bin\patches\patch.yml`（242 词；与分发仓同步；`patch_iso_full.yml` 是其备份）
+- 补丁本体：`rpcs3-src\build2\bin\patches\patch.yml`（253 词含 v4 门控；与分发仓同步；`patch_iso_full.yml` 是无门控备份）
+- **DLSS 5 链**：ReShade 6.8 全局 Vulkan 层（C:\ProgramData\ReShade）+ DLSS5-Feeder + renodx-dlss5 4.70 + nvngx_dlss/nvngx_dlssnr（全部在 build2\bin）；资产与无人值守脚本在 `桌面\DLSS5-Macross30\`；**驱动钉 616.56**（renodx 4.7 在 616.64+ 系全灭），NV App 自动更新已关
 - 代理：Clash @ 127.0.0.1:7890
 
 ## 2. 日常玩用配置（已验证）
 
-build2 + 专属配置（VFS 指盘；Core: LLVM + All Timers + RPCS3 Scheduler；Video: Write Color Buffers + Stretch To Display Area；Advanced: **Driver Wake-Up Delay 200µs**——20 没拦住 Dead FIFO，再犯就上 RSX FIFO Accuracy: Atomic）+ `patch.yml` 242 词。**必须全屏玩**。
+build2 + 专属配置（VFS 指盘；Core: LLVM + All Timers + RPCS3 Scheduler + RSX FIFO Accuracy: Atomic；Video: Write Color Buffers + Stretch To Display Area + **Driver Wake-Up Delay 200µs**（属 Video 节，勿放错）+ **Resolution Scale 300% + Output Scaling=FSR + RCAS 65% + AF16**；Misc: 全屏启动）+ `patch.yml` 253 词。**必须全屏玩**。
 
-已知残留（全部 cosmetic，可正常通关）：冲刺运动模糊一条分割线（Next Path I）、Dead FIFO 偶发（激战 ~25min 一次，ZCULL 守卫保证它只留日志不弹窗）。
+**配置模式铁律**：RPCS3 没有 "Advanced" 节名（那是 GUI 标签页）；VFS 路径键永远误报"废弃键"弹窗——勾 "Don't show again"，**永远别点 Yes**（会删 /dev_bdvd/ 映射）。
+
+已知残留（全部 cosmetic，可正常通关）：冲刺运动模糊一条分割线（Next Path I）、Dead FIFO 偶发（ZCULL 守卫保证只留日志不弹窗）。
 
 ## 3. 血泪雷区（每条都是真炸过的）
 
@@ -50,6 +53,21 @@ build2 + 专属配置（VFS 指盘；Core: LLVM + All Timers + RPCS3 Scheduler�
 **取证工具链**（分发仓 `tools/`）：`uw_logger_patch.yml`（日志洞补丁块，贴进 patch.yml 即启用，日常勿开）+ `uw_ring_read2.py`（单次读环，带纹理名）+ `uw_bg_watch.py`（长监听，自动找基址/断线重连）+ `uw_talk_watch.py`（蹲 0x4cxxx 重烘焙）。数据区 0xa6c000（text 尾页 21KB 零区，已验证安全）；洞 0x9e2f8c（596B 零岛）。
 
 **回滚**：`rpcs3-src\build2\bin\patches\patch.yml.pre-v4.bak` = 无门控全补丁（脸缩其余全对）。
+
+## 5b. DLSS 5 神经渲染链（2026-09-10 深夜接入，可玩）
+
+**链路**：ReShade 6.8 全局 Vulkan 层 → LumeniteFX（光流 MV）→ DLSS5-Feeder（伪造 DLAA 契约，私有 D3D12 设备真 evaluate）→ renodx-dlss5 4.70（feature 18 神经渲染）→ 写回帧。帧率零损耗（游戏原生 30fps）。
+
+**雷区（全是实测）**：
+- **驱动钉 616.56**；NV App 别用来升驱动（它只给最新版，会顶炸 renodx）；关它的驱动自动更新
+- 启动走桌面快捷方式（bash 直启 EBOOT 卡死 OP 影片）
+- **开机/影片阶段 NR 必须关**（红闪幻觉），进游戏后开（F6 实时切换 / 面板 Enable）。Renodx 面板在覆盖层顶栏 "RenoDX-DLSSNR" 页签
+- **深度缓冲手选**：Generic Depth → 选"顶点数最多"的那层（100% 时是 1280×720 ~29 万顶点；300% 时是 3840×2160 同理）——游戏几十层合成，自动必抓错。改分辨率后**要重选**（旧尺寸没了）
+- **DLSS SR 超分此游戏无解**（Feeder 超分旋钮 D3D11 专用；喂入帧已是拉伸过的 720p）——真细节靠 RPCS3 Resolution Scale
+- 安装器：`DLSS5-Macross30\Install-DLSS5Feeder.ps1`（重装/换机用）；校验 `build2\bin\Verify-DLSS5Feeder.ps1`
+- DFC 消费者（另一实现，Discord 取件）未试；renodx 4.7 的调参旋钮：Preset/Style/Overall-Global-Local Tone/Structure/Character-Skin/Diffuse White nits
+
+**验收状态**：DLAA+NR 出图正常，观感 = 更鲜艳+光影质感；嘴型/表情不受影响。
 
 ## 6. 工具速查（UW32_Macross30\）
 
