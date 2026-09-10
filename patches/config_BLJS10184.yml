@@ -4,12 +4,12 @@ Core:
   PPU Decoder: Recompiler (LLVM)
   Sleep Timers Accuracy: All Timers
   Thread Scheduler Mode: RPCS3 Scheduler
-  # Dead FIFO ("call 0x0" race) mitigation; observed recurring at 20us on this
-  # game, hence 200. If it still occurs, set "RSX FIFO Accuracy: Atomic"
-  # (costs some performance). See README troubleshooting.
-  Driver Wake-Up Delay: 200
 Miscellaneous:
   Start games in fullscreen mode: true
 Video:
   Write Color Buffers: true
   Stretch To Display Area: true
+  # Dead FIFO ("call 0x0" race) mitigation; observed recurring at 20us on this
+  # game, hence 200. If it still occurs, set "RSX FIFO Accuracy: Atomic" under
+  # Core (costs some performance). See README troubleshooting.
+  Driver Wake-Up Delay: 200
