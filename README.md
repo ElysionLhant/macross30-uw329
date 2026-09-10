@@ -6,6 +6,7 @@ A 32:9 (7680×2160) ultrawide patch for **Macross 30: Ginga o Tsunagu Utagoe (BL
 
 - 3D projection renders native 32:9 (main camera matrix m00 halved, 0.974→0.487)
 - HUD, menus and text are natively centered to the middle 16:9 region (CPU baker patches, not stretching)
+- Comm-scene monitor portraits (and their mouth/expression animation cells) render full-width and correctly proportioned — an LR-class gate in the shared writer (`0x5e5ea4`) — see "(SOLVED) The Next Path II"
 - Movies stay stretched 16:9 (pre-rendered 16:9 sources — nothing can be done)
 - Known leftover: a vertical seam line on the boost motion blur — see "The Next Path" below
 
@@ -26,7 +27,6 @@ A 32:9 (7680×2160) ultrawide patch for **Macross 30: Ginga o Tsunagu Utagoe (BL
 
 ## Known issues
 
-- **Comm-scene portraits horizontally squashed (×0.5)**: the monitor/dialog portraits are drawn by writer `0x5e5ea4` in **framebuffer pixel space** (already 32:9-correct from the 3D projection), but the same writer also draws LAYO-space nine-patch dialog quads that need the centering formula — a mixed painter. Centering it squashes the portraits; exempting it stretches the dialog frames. Proper fix = per-caller routing (route the portrait caller to an unpatched sibling writer) or emulator-side gating — see "The Next Path". Cosmetic only.
 - **Boost motion-blur seam** — see "The Next Path" below.
 
 ---
@@ -123,17 +123,17 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 
 **Do NOT**: re-patch the 7 quad+UV variants (trades the seam for the black band); strip more `0x5exxxx` functions (each one takes a chunk of UI with it).
 
-## The Next Path II (comm-portrait squash) — OPEN, gate attempts reverted
+## (SOLVED) The Next Path II — comm-portrait squash
 
-**Symptom (present in the shipped patch)**: in story/comm scenes, on-monitor portraits render at half horizontal width. Everything else is correct.
+**Fixed in the shipped patch (v4)**: portraits and their expression/mouth cells now render full-width; all LAYO UI stays centered. Verified on hardware: shop portrait, in-mission comm conversations (mouth flaps + expression swaps play again).
 
-**Root cause (verified)**: the portraits and the nine-patch dialog frames / cockpit HUD plates share one writer, `0x5e5ea4`, with **identical framebuffer-space coordinates**. The patched corner math `(px/A)·fS − fS` centers at fS=0.5 and reproduces the original formula at fS=1.0 — but portraits want 1.0 while every frame/plate wants 0.5.
+**Root cause (verified)**: portraits and nine-patch dialog frames / cockpit HUD plates share one writer, `0x5e5ea4`, with **identical framebuffer-space coordinates** — a mixed painter. The patched corner math `(px/A)·fS − fS` centers at fS=0.5 and reproduces the original formula at fS=1.0; portraits want 1.0, everything else wants 0.5.
 
-**Three failed gate attempts (all reverted; lessons in docs/COLDSTART.md §5)**:
+**The discriminator (field-data driven, zero false positives observed)**: a ring-buffer logging cave (see `tools/uw_ring_read2.py` / `uw_bg_watch.py`) recorded every `0x5e5ea4` call live — LR, design coords, UV block, and the r5 descriptor's texture path. Across shop / flight / title / comm scenes, **everything** except portraits arrives via LR `0x79674`; portraits (`po_*.dds`, `/pk2_*.dds`) and their expression cells arrive only via the three-site class `0x4c214 / 0x4c9f0 / 0x4ca64`. (UV-span and width-window discriminators were falsified by the data: title/menu art is full-UV, and `face_l_mask.dds` is a full-UV HUD plate.)
 
-1. *x1 > 1280 discriminator* — dialog plates are framebuffer-space too; killed them all.
-2. *LR-callsite discriminator (0x79674 → 1.0)* — `0x79674` also serves cockpit HUD plates; stretched the entire HUD. (Plus a hard-won lesson: `cntlzw` is never a boolean — missing `srwi` made dialogs render at fS≈0.77.)
-3. Current understanding: **no static discriminator found yet** — next step is field data (GDB trace at the `0x7009c4` trampoline logging LR + quad coords + UV pointers in flight and comm scenes; tools and cave space already prepared, see COLDSTART §5), then a width-window / UV-span / scene-flag gate. The fS channel mechanism itself (r12 → writer_frame+0x88 → seed lfs) is proven working.
+**The gate**: trampoline `0x7009d0` detours to a 9-word cave at `0x9e2f8c` (zero-fill island, reference-scanned); range test `(lr16 ^ 0x8000) − 0x4214 < 0x864` selects the portrait class; r12 carries fS bits (`0x3F800000`/`0x3F000000`) into `writer_frame+0x88` (`stw` at `0x5e5f08`); the seed slot `0x5e5fcc` reads it back with `lfs f11, 0x88(r1)`. All encodings verified by Python simulation + capstone round-trip before hardware testing.
+
+**Hard-won encoding lesson**: v1/v3 gate attempts in git history build `0x3F80`/`0x3F00` — the top *16 bits* of the float, never shifted left — delivering fS≈0, not 1.0/0.5. If you hand-roll float bits in integer registers, shift them into the high half (`slwi`/`oris`) and simulate the word sequence before booting.
 
 ---
 
@@ -141,6 +141,8 @@ Lesson: the batch loop's record advance pointer is `r31` (`addi r31,r31,0x20`). 
 
 - `uw_measure.py` — live tile-pitch / projection-matrix m00 probe (pymem, auto ASLR base)
 - `uw_gdb_trace.py` — RPCS3 GDB stub breakpoint tracer (Z0 breakpoints + arbitrary registers + memory deref)
+- `uw_writer_trace3.py` — GDB trampoline tracer v2: LR + coords + UV block + obj head per `0x5e5ea4` call (interpreter only)
+- `uw_ring_read2.py` / `uw_bg_watch.py` / `uw_talk_watch.py` — ring-buffer logger readers: per-call LR + coords + UV + descriptor texture names, live (pymem); the field-data rig that pinned the comm-portrait gate (enable the logger via `tools/uw_logger_patch.yml`, works at full speed under LLVM)
 - `uw_vp_disasm.py` / `uw_vp_*.py` — RSX vertex-program microcode disassembler / capture draw miners
 - `uw_pack_re.py` / `uw_pack_patch.py` / `uw_pack_center640.py` — pack container (PIDX/AXL) parser/patcher/LAYO widener (operates only on your own game files; integrity-checked resources trigger "Game data is corrupted" and are excluded by default)
 - `uw_cgb_fix.py` — .cgb microcode patcher inside shaders.dat

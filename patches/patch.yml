@@ -1,6 +1,6 @@
 Version: 1.2
 
-# Macross 30 (BLJS10184) 32:9 ultrawide (3D only, verified)
+# Macross 30 (BLJS10184) 32:9 ultrawide (3D + HUD/text centered + comm portraits gated, all verified on hardware)
 # 思路: 投影矩阵水平项 = m11 / aspect, aspect = (float)w / (float)h (fcfid 整数转换)
 # 把各处宽度转换 frsp fX, f13 改成 fadds fX, f13, f13 (宽度×2 → aspect 16:9 → 32:9)
 # 另: 标量构建器用的静态宽高比表 @0xad5328 由 16/9 改为 32/9
@@ -34,7 +34,7 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x008df4c0, 0x3a4ccccd ]
       - [ be32, 0x008dfa18, 0x3a4ccccd ]
       # UW 居中补丁 (BAKER_FINDING 11-word, writer 0x5e5ea4, x: (px/A)*0.5-0.5 => [-.5,.5] 居中, y 不动)
-      - [ be32, 0x005e5fcc, 0xc162599c ]
+      - [ be32, 0x005e5fcc, 0xc1610088 ]  # f11 = writer_frame+0x88 (gate-written fS; was fixed 0.5 lfs f11,0x599c(r2))
       - [ be32, 0x005e5fd0, 0xedad0024 ]
       - [ be32, 0x005e5fe4, 0xedad5af8 ]
       - [ be32, 0x005e6008, 0xc5b90008 ]
@@ -271,3 +271,22 @@ PPU-15a011c611e0a0a1fedff55159bc26336db4dfd7:
       - [ be32, 0x1a1c0c, 0xfda03818 ]  # frsp f12,f7 -> frsp f13,f7（texH 挪窝，保 f12=K）
       - [ be32, 0x1a1c1c, 0xed4a6824 ]  # fdivs f10,f10,f12 -> fdivs f10,f10,f13
       - [ be32, 0x1a1c20, 0xed086824 ]  # fdivs f8,f8,f12  -> fdivs f8,f8,f13
+
+      # ---- comm-portrait gate (v4): writer 0x5e5ea4 mixed painter fix ----
+      # corner math (px/A)*fS-fS: fS=0.5 centers LAYO UI, fS=1.0 = original full-width formula.
+      # portraits/expression cells (po_*.dds, /pk2_*.dds) reach the writer only via LR in
+      # {0x4c214, 0x4c9f0, 0x4ca64}; everything else observed uses 0x79674 and wants 0.5.
+      # tramp 0x7009d0 detours to a 9-word gate cave at 0x9e2f8c (zero-fill island, no refs);
+      # gate writes fS bits in r12 -> stw to writer_frame+0x88 at 0x5e5f08 -> seed lfs at 0x5e5fcc.
+      # range test: (lr16 ^ 0x8000) - 0x4214 < 0x864  (sites -> 0..0x850; 0x9678 -> huge)
+      - [ be32, 0x007009d0, 0x482e25bc ]  # tramp: b 0x5e5ea4 -> gate cave 0x9e2f8c
+      - [ be32, 0x005e5f08, 0x91810088 ]  # nop -> stw r12, 0x88(r1)
+      - [ be32, 0x009e2f8c, 0x7d6802a6 ]  # mflr r11
+      - [ be32, 0x009e2f90, 0x556c043e ]  # clrlwi r12, r11, 16
+      - [ be32, 0x009e2f94, 0x698c8000 ]  # xori r12, r12, 0x8000
+      - [ be32, 0x009e2f98, 0x398cbdec ]  # addi r12, r12, -0x4214
+      - [ be32, 0x009e2f9c, 0x280c0864 ]  # cmplwi r12, 0x864
+      - [ be32, 0x009e2fa0, 0x7d800026 ]  # mfcr r12
+      - [ be32, 0x009e2fa4, 0x558cc210 ]  # rlwinm r12, r12, 24, 8, 8
+      - [ be32, 0x009e2fa8, 0x658c3f00 ]  # oris r12, r12, 0x3F00
+      - [ be32, 0x009e2fac, 0x4bc02ef8 ]  # b 0x5e5ea4

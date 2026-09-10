@@ -1,0 +1,73 @@
+# UW writer-call logger — debug patch block (paste into patch.yml as a second patch entry to enable).
+# Traps every 0x5e5ea4 writer call into a 64-slot ring at 0xa6c000; read with tools/uw_ring_read2.py / uw_bg_watch.py.
+# Field rig that pinned the v4 portrait gate. Keep OFF for daily play.
+  "UW writer-call logger (DEBUG, field tool; keep off for daily play)":
+    Games:
+      "Macross 30":
+        "BLJS10184": [ All ]
+    Author: "ElysionLhant & Kimi"
+    Notes: "Logs every 0x5e5ea4 writer call (LR, args, coords, UV, obj head) into a 64-slot ring at 0xa6c000 (read with tools/uw_ring_read.py). Transparent: writer patch untouched."
+    Patch Version: 1.0
+    Patch:
+      - [ be32, 0x007009d0, 0x482e25bc ]  #  tramp: b 0x5e5ea4 -> logger cave 0x9e2f8c
+      - [ be32, 0x009e2f8c, 0x7d6802a6 ]  #  mflr r11
+      - [ be32, 0x009e2f90, 0x3d4000a6 ]  #  lis r10, 0xa6
+      - [ be32, 0x009e2f94, 0x614ac000 ]  #  ori r10, r10, 0xc000
+      - [ be32, 0x009e2f98, 0x818a2000 ]  #  lwz r12, 0x2000(r10)
+      - [ be32, 0x009e2f9c, 0x718c003f ]  #  andi. r12, r12, 0x3f
+      - [ be32, 0x009e2fa0, 0x558c3830 ]  #  slwi r12, r12, 7
+      - [ be32, 0x009e2fa4, 0x7d8c5214 ]  #  add r12, r12, r10
+      - [ be32, 0x009e2fa8, 0x916c0000 ]  #  stw r11, 0(r12)
+      - [ be32, 0x009e2fac, 0x906c0004 ]  #  stw r3, 4(r12)
+      - [ be32, 0x009e2fb0, 0x90ac0008 ]  #  stw r5, 8(r12)
+      - [ be32, 0x009e2fb4, 0x90cc000c ]  #  stw r6, 12(r12)
+      - [ be32, 0x009e2fb8, 0x90ec0010 ]  #  stw r7, 16(r12)
+      - [ be32, 0x009e2fbc, 0x81040000 ]  #  lwz r8, 0(r4)
+      - [ be32, 0x009e2fc0, 0x910c0014 ]  #  stw r8, 20(r12)
+      - [ be32, 0x009e2fc4, 0x81040004 ]  #  lwz r8, 4(r4)
+      - [ be32, 0x009e2fc8, 0x910c0018 ]  #  stw r8, 24(r12)
+      - [ be32, 0x009e2fcc, 0x81040008 ]  #  lwz r8, 8(r4)
+      - [ be32, 0x009e2fd0, 0x910c001c ]  #  stw r8, 28(r12)
+      - [ be32, 0x009e2fd4, 0x8104000c ]  #  lwz r8, 12(r4)
+      - [ be32, 0x009e2fd8, 0x910c0020 ]  #  stw r8, 32(r12)
+      - [ be32, 0x009e2fdc, 0x81040010 ]  #  lwz r8, 16(r4)
+      - [ be32, 0x009e2fe0, 0x910c0024 ]  #  stw r8, 36(r12)
+      - [ be32, 0x009e2fe4, 0x81040014 ]  #  lwz r8, 20(r4)
+      - [ be32, 0x009e2fe8, 0x910c0028 ]  #  stw r8, 40(r12)
+      - [ be32, 0x009e2fec, 0x81040018 ]  #  lwz r8, 24(r4)
+      - [ be32, 0x009e2ff0, 0x910c002c ]  #  stw r8, 44(r12)
+      - [ be32, 0x009e2ff4, 0x8104001c ]  #  lwz r8, 28(r4)
+      - [ be32, 0x009e2ff8, 0x910c0030 ]  #  stw r8, 48(r12)
+      - [ be32, 0x009e2ffc, 0x81070000 ]  #  lwz r8, 0(r7)
+      - [ be32, 0x009e3000, 0x910c0034 ]  #  stw r8, 52(r12)
+      - [ be32, 0x009e3004, 0x81070004 ]  #  lwz r8, 4(r7)
+      - [ be32, 0x009e3008, 0x910c0038 ]  #  stw r8, 56(r12)
+      - [ be32, 0x009e300c, 0x81070008 ]  #  lwz r8, 8(r7)
+      - [ be32, 0x009e3010, 0x910c003c ]  #  stw r8, 60(r12)
+      - [ be32, 0x009e3014, 0x8107000c ]  #  lwz r8, 12(r7)
+      - [ be32, 0x009e3018, 0x910c0040 ]  #  stw r8, 64(r12)
+      - [ be32, 0x009e301c, 0x81070010 ]  #  lwz r8, 16(r7)
+      - [ be32, 0x009e3020, 0x910c0044 ]  #  stw r8, 68(r12)
+      - [ be32, 0x009e3024, 0x81070014 ]  #  lwz r8, 20(r7)
+      - [ be32, 0x009e3028, 0x910c0048 ]  #  stw r8, 72(r12)
+      - [ be32, 0x009e302c, 0x81070018 ]  #  lwz r8, 24(r7)
+      - [ be32, 0x009e3030, 0x910c004c ]  #  stw r8, 76(r12)
+      - [ be32, 0x009e3034, 0x8107001c ]  #  lwz r8, 28(r7)
+      - [ be32, 0x009e3038, 0x910c0050 ]  #  stw r8, 80(r12)
+      - [ be32, 0x009e303c, 0x81030000 ]  #  lwz r8, 0(r3)
+      - [ be32, 0x009e3040, 0x910c0054 ]  #  stw r8, 84(r12)
+      - [ be32, 0x009e3044, 0x81030004 ]  #  lwz r8, 4(r3)
+      - [ be32, 0x009e3048, 0x910c0058 ]  #  stw r8, 88(r12)
+      - [ be32, 0x009e304c, 0x81030008 ]  #  lwz r8, 8(r3)
+      - [ be32, 0x009e3050, 0x910c005c ]  #  stw r8, 92(r12)
+      - [ be32, 0x009e3054, 0x8103000c ]  #  lwz r8, 12(r3)
+      - [ be32, 0x009e3058, 0x910c0060 ]  #  stw r8, 96(r12)
+      - [ be32, 0x009e305c, 0x3d00beef ]  #  lis r8, 0xBEEF
+      - [ be32, 0x009e3060, 0x61085ea5 ]  #  ori r8, r8, 0x5EA5
+      - [ be32, 0x009e3064, 0x910c0074 ]  #  stw r8, 116(r12)
+      - [ be32, 0x009e3068, 0x810a2000 ]  #  lwz r8, 0x2000(r10)
+      - [ be32, 0x009e306c, 0x910c0078 ]  #  stw r8, 120(r12)
+      - [ be32, 0x009e3070, 0x810a2000 ]  #  lwz r8, 0x2000(r10)
+      - [ be32, 0x009e3074, 0x39080001 ]  #  addi r8, r8, 1
+      - [ be32, 0x009e3078, 0x910a2000 ]  #  stw r8, 0x2000(r10)
+      - [ be32, 0x009e307c, 0x4bc02e28 ]  #  b 0x5e5ea4

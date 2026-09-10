@@ -42,10 +42,10 @@
 
 ## 已处理的崩溃/事故（别重复查）
 
-- **主局：RSX Dead FIFO**——FIFO 里出现 `call 0x0`：RSX 消费者读到了 PPU 还没写完的命令（rpcs3 已知竞态类，非本补丁引起）。两次发作均在激战 ~25 分钟处。缓解阶梯：每游戏配置 `Driver Wake-Up Delay` 20→**200µs**（20 已证不够）→ `RSX FIFO Accuracy: Atomic`。
+- **主局：RSX Dead FIFO**——FIFO 里出现 `call 0x0`：RSX 消费者读到了 PPU 还没写完的命令（rpcs3 已知竞态类，非本补丁引起）。两次发作均在激战 ~25 分钟处。缓解阶梯：每游戏配置 `Driver Wake-Up Delay` 20→**200µs**（20 已证不够）→ `RSX FIFO Accuracy: Atomic`（**2026-08-16 已启用**，写在 build2 专属配置 `Core:` 节，与 200µs 并存）。
 - **次局：退出时 ZCULL_control 析构崩（host AV @base+0x7438f0）**——关机路径遍历已损坏的 MMIO 锁定页表（`RSXZCULL.cpp:23`），上游 master 代码相同（未修）。已在 build2 源码加 SEH 守卫（`unlock_pages_guarded`），**实机验证**：Dead FIFO 后的关机只留两行日志不再弹窗。重编方法：VS2022 自带 cmake（不在 PATH）`--build build2 --config Release --target rpcs3`。
 - **"Game data is corrupted" / "vector<T> too long" 闪退**——**周末实验包在覆盖目录插队**：`dev_hdd0/game/BLJS10184_INSTALL/USRDIR/data/pack/` 里的实验 data.dat/data2.dat/shaders.dat（文件侧路线遗物）被游戏优先加载，一张坏表让机库菜单 vector 爆炸（游戏自己 abort 并 tty 打印回栈）；摘掉实验包又触发安装完整性校验弹 corrupted。**解法：整个 BLJS10184_INSTALL 隔离改名，游戏从光盘重装原版数据**。教训：文件侧实验残留比代码补丁残留更阴险，它对所有模拟器、所有补丁状态一视同仁地生效。
-- **人脸缩半（通讯场景监视器头像）**——五轮二分定位：画家 = `0x5e5ea4`，但它同时给帧缓冲空间的头像/对话框底座/座舱 HUD 打工（**三者坐标同为帧缓冲系，数值不可分**），**混画**。**三版门控均失败已回滚**（v1 x1>1280 冤杀底座；v2 `cntlzw` 漏 `srwi` 菜单全飞；v3 LR 判 0x79674→1.0 又拉飞座舱 HUD）。现状态 = `patch_iso_full.yml` 全补丁（脸缩，其余全对）。后续路线与取证工具（`tools\uw_writer_trace2.py` + 0x8defd4 洞 + 已验证的 fS 通道）全部备齐，见 `docs\COLDSTART.md` §5。
+- **人脸缩半（通讯场景监视器头像）**——**已修复（2026-08-17，v4 门控）**。环形日志洞取证四场景实机数据实锤：除头像外一切走 `0x79674`；头像底图（`po_*.dds`/`/pk2_*.dds`）与表情/嘴型叠加格（`po_*_N.dds`）只走 `0x4c214`/`0x4c9f0`（`0x4ca64` 未触发）。9 词门控洞 @0x9e2f8c：区间判定 `(lr16^0x8000)−0x4214<0x864` 选中头像类给 fS=1.0。细节与血泪教训（v1/v3 的 16 位移位 bug、描述体池化、低频重烘焙）见 COLDSTART §5。
 
 ## 存档点
 
