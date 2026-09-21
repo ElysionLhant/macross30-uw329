@@ -441,3 +441,22 @@
 - **UI 耦合警告**：B1 是 UI 缩放与后处理 texel 步长的**共享源**（UI v3 改 B1.x→1/2560 实证），池级补丁必然动 UI——UI 变小是实验包的预期副作用，不是 bug。
 - **实验包 `patches/BLJS10184_patch.yml`（TexelStep300）**：主补丁 265 条全保留 + 18 条 texel 改写——B 系 →{1/3840, +1/2160}、C 系 →{2/3840, −2/2160}、A 系 →{1/3840, −1/2160}；HUD 池 0xac1f10 不动。RPCS3 按标题自动加载 `BLJS10184_patch.yml`；patch_info_map 是 unordered_map、同址多补丁应用顺序无保证 → **必须关主补丁、只开实验条**，测完关实验回主。
 - **判读**：条纹消失 + UI 变小 → 机制坐实，下一步 caller 门控定稿（builder 两条 lfs 按 LR 改指洞穴常量，v4 门控同款手法，UI/后处理分离）；条纹依旧 → 池子认错，活体追 fifo 60126-60792 上传真源。
+
+### 条纹手术 II（2026-09-22 深夜：池路线实测排除 → 模拟器侧钩子落地，待用户目检）
+- **池补丁实验结果：完全无效**（条纹不变、UI 不变）→ B/A/C 池不驱动 300% 渲染路径。实验包已撤出活体 patches/（仓内留档）。
+- **排除链**（全部实锤）：
+  - 300% 抓包 fifo（uw_300deck.pkl）：slot 467（reg 0x1efc 选槽 + 0x1f00 数据）持续上传 {1/1280,1/720,0,0} 与 {2/720 系}——上传客观存在。
+  - EBOOT .text 全扫：无 lis/ori 立即数物化这四个值（0 处）→ 运行时计算得出。
+  - 活体断点上传 thunk 0x700bc4/0x62988c：2000 stops/10s **零** texel 命中（uw_upload_trace.py）→ 稳态不经过该路径；builder1/2 稳态不跑。
+- **定稿修复 = rpcs3 侧钩子**（build2 工作树，`RSXThread.cpp` 未提交）：`fill_vertex_program_constants_data` 出口对精确位形 {±1/1280, ±1/720, ±2/1280, ±2/720} 做 `f /= resolution_scale`——100% 下空操作，env `RPCS3_UW_TEXEL=0` 可关。GK 消费咽喉点，VP 常量进 GPU 前统一改写。
+  - 自证日志：`[UW32] texel-step fix active, resolution scale x3.000000` / `rewrite #N: 3a4ccccd -> 39888889`。
+  - 甲板实测（on 轮）：~40 秒 gameplay 内改写约百万次（heartbeat 3355 万词），画面/HUD 无异常（ReShade 截图）。
+- **待用户目检**：正常开机玩即可（钩子默认开），甲板走近机体看条纹。消失 → 结案；还在 → 条纹源在 fragment 侧或后期链（RCAS 65% 未排除，值一个对照）。
+- **截图自动化盲区**：ReShade 只抓到 1024×768（rpcs3 present 缓冲），GDI CopyFromScreen 对 Vulkan flip-model 只得纯白 → 细条纹对比无法自动出图，靠肉眼。
+
+### 自动化链修复（2026-09-22 深夜，OP 连死真因 + 注入考古）
+- **OP 连死真因（修正 09-21 模型）**：openStream 在 +37~43s 才出现且死线随即触发（报错在 openStream 后 60ms 内）。八月能活是因为 30.8s 就跳了片。今晚启动普遍偏慢逼死线；0.7s 密集连按 + 失败重试可收敛（成功率实测 3/4+）。想根治得 PPU 级 NOP 掉 exit game 分支（未做）。
+- **键盘注入**：
+  - PostMessage 路径（postkey_uw.ps1）今晚起失效：返回 True 但游戏无感（Qt 不翻译？原因未明）。ReShade 的 Backslash 截图走 WndProc 钩子仍可用。
+  - SendInput 路径（postkey2.ps1）**从来没工作过**：INPUT 结构体 x64 应为 40 字节（Explicit Size=40, ki@8），它给 32 → err 87 静默吞。**postkey3.ps1 已修**（sent=1/1 实证），另修了窗口查找：不能用 MainWindowHandle（会抓到 GUI 小窗），必须枚举找标题含 BLJS10184+FPS/Vulkan 的。
+- 新链路 `DLSS5-Macross30/uw_texel_ab.sh`：env 控制 RPCS3_UW_TEXEL、0.7s 跳片、失败重试×3、Return/X 扫射穿剧情片、ReShade 截图。
