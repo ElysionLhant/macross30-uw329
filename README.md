@@ -52,7 +52,7 @@ Lesson: **patching inputs is safer than patching formulas**. The matrix is rebui
 
 ### 2. HUD centering: find the writer functions, not constants
 
-Symptom: at 32:9 the entire HUD is squeezed into the left third of the screen.
+Symptom: at 32:9 the entire HUD is stretched to double width, spanning the full screen.
 
 HUD vertices are **CPU-baked per corner** as f32 quads, written by a **function family** (a generic 2D class vtable: 36 writer functions + 2 text renderers). Every function follows the same pattern:
 
@@ -64,7 +64,7 @@ ndc_x = (px - A) / A      // px ∈ [0,1280] design coordinates
 ndc_y = -(py - B) / B
 ```
 
-At 32:9 the runtime W is 3840, so A=1920 and px∈[0,1280] maps to [-1, -1/3] — that's the left-third squeeze. **Searching for constants like 51.2 / 32767 / 1280 is a dead end**: the width is read at runtime, so you must find the writer functions themselves.
+The game always renders internally at 1280×720 (cellVideoOut-derived), so W=1280, A=640 and px∈[0,1280] maps to [-1, 1] — the HUD natively fills the 720p frame, and **Stretch To Display Area** then stretches that frame 2× horizontally onto the 32:9 window: that's the double-wide HUD. (W is the *internal render width* — don't confuse it with the displayed width of the middle 16:9 band, 3840 px on a 7680×2160 panel; an earlier revision of this doc made exactly that mix-up.) **Searching for constants like 51.2 / 32767 / 1280 is a dead end**: the width is read at runtime, so you must find the writer functions themselves.
 
 The centering fix (2 instructions per x-corner; y untouched):
 
@@ -75,7 +75,7 @@ The centering fix (2 instructions per x-corner; y untouched):
 #            fmsubs f13, f13, fS, fS  ; (px/A)*0.5 - 0.5 = px/(2A) - 0.5
 ```
 
-Result `px/(2A) - 0.5`: design coordinates [0,1280] map exactly onto NDC [-0.5, 0.5], the middle 16:9 region, **without aspect distortion** (x scale factor matches y). The fS=0.5 seed goes into an existing `nop` slot as `lfs fS, 0x599c(r2)`.
+Result `px/(2A) - 0.5` with A=640: design coordinates [0,1280] map exactly onto NDC [-0.5, 0.5], which the 2× display stretch then lands in the middle 16:9 region (the center 3840×2160 of the panel), **without aspect distortion** (x scale factor matches y). The fS=0.5 seed goes into an existing `nop` slot as `lfs fS, 0x599c(r2)`.
 
 PPC A-form encoding gotchas (learned the hard way): **frC is at bits 10-6, frB at bits 15-11**; fdivs XO=18, fmsubs XO=28, fmuls XO=25 (all opcode 59); `fmsubs(a,b,c) = a*b - c`. frsp & co. are opcode **63**, not 59.
 

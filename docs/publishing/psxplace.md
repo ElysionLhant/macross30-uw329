@@ -24,7 +24,7 @@ Native 32:9 (7680×2160) for Macross 30. Three layers, all verified on hardware:
    W,H read from 0x5bba04 every draw; A = W*0.5
    ndc_x = (px - A)/A, px ∈ [0,1280] design space
    ```
-   At 3840 wide that maps everything to [-1, -1/3] (the "left third" squeeze). No static constants exist — you must find the writers. Fix is 2 instructions per x-corner:
+   The game renders internally at 1280×720 (W=1280, A=640), so the HUD bakes to the full [-1, 1] range and Stretch To Display Area stretches the frame 2× horizontally — the double-wide HUD. No static constants exist — you must find the writers. Fix is 2 instructions per x-corner:
    ```
    fsubs f13,f13,fA → fdivs f13,f13,fA
    fdivs f13,f13,fA → fmsubs f13,f13,fS,fS   ; fS=0.5 seeded into a nop slot
