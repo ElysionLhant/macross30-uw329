@@ -460,3 +460,36 @@
   - PostMessage 路径（postkey_uw.ps1）今晚起失效：返回 True 但游戏无感（Qt 不翻译？原因未明）。ReShade 的 Backslash 截图走 WndProc 钩子仍可用。
   - SendInput 路径（postkey2.ps1）**从来没工作过**：INPUT 结构体 x64 应为 40 字节（Explicit Size=40, ki@8），它给 32 → err 87 静默吞。**postkey3.ps1 已修**（sent=1/1 实证），另修了窗口查找：不能用 MainWindowHandle（会抓到 GUI 小窗），必须枚举找标题含 BLJS10184+FPS/Vulkan 的。
 - 新链路 `DLSS5-Macross30/uw_texel_ab.sh`：env 控制 RPCS3_UW_TEXEL、0.7s 跳片、失败重试×3、Return/X 扫射穿剧情片、ReShade 截图。
+
+### 条纹手术 III（2026-10-15 深夜：texel 步长机制正式证伪，全面翻案）
+
+> 本轮由 RenderDoc 实捕 + build2 双探针 + 全量 shader 离线反汇编驱动。**结论：9-22 的"720p 逻辑 texel 偏移→邻域采样错位成条纹"机制定位是错的**（至少不是主因）。以下每条都有实锤，勿再重查。
+
+**症状定版（实机目检 + 内部帧截图双重确认）**：300% 内部帧（3840×2160，输出缩放之前）里，动态对象（机体/爆炸/光束/云）的边缘以 ~720p 粒度阶梯化、贴花区碎块化；静态甲板/天空平滑。100% 干净（6× 输出放大把 1px 锯齿糊掉了）。损伤在渲染时即存在于内部帧——与输出链无关。
+
+**证伪清单（全部实测排除）**：
+- ❌ VP 常量 texel 步长：build2 钩子运行时改写百万次（1/1280→1/3840），画面零变化（用户目检 + A/B 像素差分仅走位时序差）。
+- ❌ FP 内联常量 texel 步长：新增 `write_fragment_constants_to_buffer`（ProgramStateCache.cpp）咽喉点钩子，日志确认命中并改写 5 个后处理 FP（0x2028880/0x201aa00/0x201a680/0x4f3b300/0x4f3fe00）的 {±1/1280,±1/720,±2/1280,±2/720}，画面零变化。**VP+FP 两路步长都不是条纹驱动源。**
+- ❌ RCAS/输出缩放：`FidelityFX CAS Sharpening Intensity: 65→0` 无变化；且输出滤波器不可能只碎机体不碎背景。
+- ❌ RT 物理缩放：RT 探针实测全部 ×3 正确——主 RT 1280×720→3840×2160、640×360→1920×1080、**R8 蒙版 0x04ab0000(pitch 1280,fmt=9)→3840×2160**、mip 链全对。
+- ❌ CPU 生成蒙版/DMA 回读：蒙版是 GPU 全屏滤波生成（生产者 fp=0x04aa9e80，采样满屏源 0x02b70000），窗口内无图像 DMA。
+- ❌ 纹理最近点滤波：机体材质全部 LINEAR_MIPMAP_LINEAR / LINEAR。
+- ❌ VP 常量/微码中的 720p 栅格量化常量（1280.0/720.0/640.0 等）：不存在。
+- ❌ 游戏 MSAA：主 pass surface format AA 字段=0（CENTER_1，游戏根本没开硬件 MSAA）。
+- ❌ DDX/DDY 屏幕导数边缘检测：对 shaders_cache.v6/raw 全量 131 个 .fp 离线反汇编普查，**无一使用 DDX/DDY**。
+
+**仍活着的机制嫌疑（未排除）**：
+- 蒙版生产者 FP（0x04aa9e80）的 **TXL 显式 LOD**（LOD 来自内联常量，若按 720p 调参则在 300% 拿错 mip 层）——需要蒙版物理内容才能定案。
+- 机体材质（E3BE7D509755FF50 = 抓包 0x0585d280，57 指令，采 8 纹理含蒙版 tex14 + 一次 WPOS 计算）的数据流细节未完全还原。
+- 唯一决定性强检 = **build2 内嵌物理 RT 读回 dump**（在蒙版被采样时把 Vulkan 图像落盘）——未实现；或一次覆盖完整的 GLSL dump 轮（见下方工具坑）。
+
+**工具坑（今夜血泪，勿再踩）**：
+- **RenderDoc 在此机抓不到 RPCS3 的 draw 流**：两次干净托管启动均只抓到 present（6 事件空帧）。坑序：①注入已运行进程太迟（Vulkan 已初始化）②系统 Vulkan 层被 ReShade 全局层抢先（对策：进程级 `VK_LOADER_LAYERS_DISABLE='VK_LAYER_RESHADE*'`）③RenderDoc 层注册表没装（对策：HKCU\SOFTWARE\Khronos\Vulkan\ImplicitLayers 加 `C:\Program Files\RenderDoc\renderdoc.json`=DWORD 0，无需管理员）④qrenderdoc --python 的脚本路径要绝对路径且**内嵌 py 无 sys.argv**（用 glob 兜底）⑤SaveTexture 在此版本要 2 参数（save, None）⑥首启有"Update Available"弹窗挡脚本。
+- **harness 冷缓存 = 黑底世界**：清了 shader 缓存后无人值守跑的 2 分钟窗口内 3D 永远不渲染（HUD 在、世界黑），Async 模式编译赶不上；**Legacy 模式也没用**——因为游戏专属配置 config_BLJS10184.yml 的 Shader Mode 覆盖全局（当时改的是全局，白改）。冷缓存轮只有手开可行。
+- **harness OP 判定假阳性**：`uw_texel_ab.sh` 已修——run_one 开头必须 `: > TTY.log` 清残留 "exit game!"，否则 loop1 就读到上一轮尸体。
+- **postkey3.ps1 加键**：F12/PrintScreen 已入映射表（F12 同时是 rpcs3 内帧截图键，3840×2160 落 `bin/screenshots/BLJS10184/`——**内帧截图免费且比 RenderDoc 可靠**）。
+- **ReShade 全尺寸截图今晚恢复可用**（tx300 系列 7680×2160；9-22 时只能 1024×768，原因未查）。
+- **build2 探针开关语义变更**：`RPCS3_UW_TEXEL` 现在默认全关（日常玩=原生行为）；`=1` 改写+日志，`=probe` 只记不改。VP 钩子（RSXThread.cpp）/FP 钩子（ProgramStateCache.cpp）/RT 探针（VKGSRender.cpp prepare_rtts）三者同闸。
+- **RenderDoc 层注册表残留在 HKCU**（上条③），无 enable env 时惰性，安全；256MB 的 rdc 废捕获（present-only）在 UW32_Macross30/data/rdc_deck300_*.rdc 可删。
+
+**当前建议**：日常玩 200%（实测干净）或 300% 接受条纹（纯观感）。机制定案等物理 RT dump。
