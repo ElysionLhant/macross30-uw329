@@ -493,3 +493,29 @@
 - **RenderDoc 层注册表残留在 HKCU**（上条③），无 enable env 时惰性，安全；256MB 的 rdc 废捕获（present-only）在 UW32_Macross30/data/rdc_deck300_*.rdc 可删。
 
 **当前建议**：日常玩 200%（实测干净）或 300% 接受条纹（纯观感）。机制定案等物理 RT dump。
+
+### 条纹手术 IV（2026-10-16 凌晨：物理 RT dump 仪器落地，归因定案 + FXAA 处置）
+
+> 本轮建成决定性仪器（build2 物理渲染目标读回），把 9-22 以来所有假设逐一物证排除/证实，并落地了处置方案。
+
+**新仪器（可复用，全部 env 显式开启、默认关）**：
+- **物理 RT dump**：`RPCS3_UW_DUMP=1`。`prepare_rtts` 登记有趣 RT（蒙版签名 pitch==1280 / 全屏 1280×720 / mip 链 640×360），`present()` 时若本帧出现过蒙版（=3D gameplay 帧）则 `vkQueueWaitIdle` 排空队列后逐个 `copy_image_to_buffer` 物理读回，落 `build2/bin/rtdump_f<NNN>_<addr>.raw+.txt`（蒙版与显示面 0x027b0000 强制优先，8 表面/帧，12 帧封顶）。`data/rtdump_to_png.py` 离线转 PNG。**这是全项目第一个能看 300% 物理帧内容的工具**（抓包只有 guest 逻辑视图，看不到物理粒度）。
+- **蒙版毒杀**：`RPCS3_UW_MASK0=1` 在 fragment 纹理绑定（VKDraw.cpp）把 `0x04ab0000` 蒙版纹理替换为 null——若条纹消失则蒙版调制是元凶。
+- `RPCS3_UW_TEXEL`（VP/FP 步长钩）、`RPCS3_UW_DUMP`、`RPCS3_UW_MASK0` 三者现在全部默认关，日常玩=原生行为。
+
+**物理实测（300% 甲板，逐层物证）**：
+- 基础 3D 颜色 RT（c2030000/c23f0000）= 3840×2160 **极净**（机库 YF-29 边缘丝滑、文字清晰）
+- 法线 G-buffer（c46a0000）= 640×360 逻辑（延迟管线设计如此，半分辨率）
+- R8 蒙版（c4ab0000）= 3840×2160 **平滑剪影**（AA 边缘正常，非碎块）
+- 显示面 0x027b0000 = 机体边缘锯齿 + 贴花区碎块（**损伤在这一层产生**）
+- **蒙版毒杀实验**：蒙版换 null 后显示面零变化 → **蒙版调制不是条纹驱动源**（它只服务残影/其他系统）
+- **100% vs 300% 内帧逐像素对比**：锯齿幅度按逻辑像素相同（1px@720p ≈ 2-4px@2160p÷3）——几何渲染分辨率无关，无劣化。
+
+**归因定案**：条纹 = **游戏原生无几何 AA（surface AA=CENTER_1）+ 半分辨率延迟链着色，在高内部分辨率下的呈现**。100% 干净是 6× 输出放大把 1px 锯齿糊掉了；300% 只有 2× 输出放大糊不住；RCAS 锐化再把锯齿雕成碎块。**不是缩放错误、不是 texel/常量问题、不是补丁回归、不可由步长改写修复**——是游戏架构在高分辨率下的固有形态。
+
+**处置（已落地）**：
+- **ReShade FXAA 3.11 安装启用**：`reshade-shaders/Shaders/FXAA.fx + FXAA.fxh`（NVIDIA FXAA 3.11 by Timothy Lottes），`Subpix=0.5`（`ReShadePreset.ini` 的 Techniques/TechniqueSorting/[FXAA.fx]）。**CAS 65→30**（降锐化放大，FXAA 平滑，平衡锐度与条纹）。
+- FXAA 获取坑：crosire/reshade-shaders 官方仓库已把 FXAA 从全部分支移除（默认分支 slim，只有 legacy/list/nvidia/slim 四支，无 tag）；用的是 `Otakumouse/stormshade` 镜像（`v4.X/reshade-shaders/Shader Library/Recommended/FXAA.fx` + `v4.X/reshade-shaders/Shaders/FXAA.fxh`）。
+- FXAA 编译坑：老版 FXAA.fx 的像素着色器参数带 `noperspective texcoord`，与 ReShade 6.x 共享顶点着色器（ReShade.fxh PostProcessVS）插值限定符不匹配 → `error X4568`，删掉 `noperspective` 即过（已改）。
+
+**未竟/验证入口**：FXAA 疗效需全屏目检——harness 无人值守跑的是窗口模式，ReShade 只出 1024×768 present 缓冲（出不了细条纹对比图，老盲区），全屏玩游戏时一眼可见。若 FXAA 不够劲：调 `Subpix`（ReShade 覆盖层）或 CAS 归位 65/换 SMAA。
